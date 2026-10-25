@@ -3437,10 +3437,10 @@ index 2e9876c83..000000000
 - 	if (error >= 0)
 - 		error = buf.error;
 diff --git a/fs/stat.c b/fs/stat.c
-index 0ce538a1d..1c602bf5a 100644
+index 0ce538a1d..f48763979 100644
 --- a/fs/stat.c
 +++ b/fs/stat.c
-@@ -17,16 +17,14 @@
+@@ -17,16 +17,18 @@
  #include <linux/syscalls.h>
  #include <linux/pagemap.h>
  #include <linux/compat.h>
@@ -3449,6 +3449,10 @@ index 0ce538a1d..1c602bf5a 100644
 -#endif
  
  #include <linux/uaccess.h>
++#ifdef CONFIG_KSU_SUSFS
++/* Keep stat flags and app classification aligned with the matching VFS implementation. */
++#include <linux/susfs_def.h>
++#endif
  #include <asm/unistd.h>
  
  #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
@@ -3460,7 +3464,7 @@ index 0ce538a1d..1c602bf5a 100644
  
  /**
   * generic_fillattr - Fill in the basic attributes from the inode struct
-@@ -39,17 +37,6 @@ extern void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *
+@@ -39,17 +41,6 @@ extern void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *
   */
  void generic_fillattr(struct inode *inode, struct kstat *stat)
  {
@@ -3478,7 +3482,7 @@ index 0ce538a1d..1c602bf5a 100644
  	stat->dev = inode->i_sb->s_dev;
  	stat->ino = inode->i_ino;
  	stat->mode = inode->i_mode;
-@@ -95,9 +82,53 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
+@@ -95,9 +86,53 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
  	if (IS_AUTOMOUNT(inode))
  		stat->attributes |= STATX_ATTR_AUTOMOUNT;
  
@@ -3532,7 +3536,7 @@ index 0ce538a1d..1c602bf5a 100644
  
  	generic_fillattr(inode, stat);
  	return 0;
-@@ -184,12 +215,6 @@ EXPORT_SYMBOL(vfs_statx_fd);
+@@ -184,12 +219,6 @@ EXPORT_SYMBOL(vfs_statx_fd);
   * 0 will be returned on success, and a -ve error code if unsuccessful.
   */
  
@@ -3545,7 +3549,7 @@ index 0ce538a1d..1c602bf5a 100644
  int vfs_statx(int dfd, const char __user *filename, int flags,
  	      struct kstat *stat, u32 request_mask)
  {
-@@ -197,18 +222,6 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
+@@ -197,18 +226,6 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
  	int error = -EINVAL;
  	unsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
  
@@ -3564,7 +3568,7 @@ index 0ce538a1d..1c602bf5a 100644
  	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
  		       AT_EMPTY_PATH | KSTAT_QUERY_FLAGS)) != 0)
  		return -EINVAL;
-@@ -394,12 +407,6 @@ SYSCALL_DEFINE2(newlstat, const char __user *, filename,
+@@ -394,12 +411,6 @@ SYSCALL_DEFINE2(newlstat, const char __user *, filename,
  	return cp_new_stat(&stat, statbuf);
  }
  
@@ -3577,7 +3581,7 @@ index 0ce538a1d..1c602bf5a 100644
  #if !defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_SYS_NEWFSTATAT)
  SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
  		struct stat __user *, statbuf, int, flag)
-@@ -407,10 +414,6 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
+@@ -407,10 +418,6 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
  	struct kstat stat;
  	int error;
  
@@ -3588,7 +3592,7 @@ index 0ce538a1d..1c602bf5a 100644
  	error = vfs_fstatat(dfd, filename, &stat, flag);
  	if (error)
  		return error;
-@@ -562,10 +565,6 @@ SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
+@@ -562,10 +569,6 @@ SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
  	struct kstat stat;
  	int error;
  

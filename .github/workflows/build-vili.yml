@@ -90,10 +90,12 @@ jobs:
           # Preserve the make exit status when recording output with tee.
           set -euo pipefail
           # Preserve existing vendor warning policy; integration errors still fail the build.
-          make -C kernel O=out LD=ld.lld AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
-            KCFLAGS="-Wno-incompatible-function-pointer-types -Wno-error" \
-            -j"$(nproc)" Image dtbs modules 2>&1 | tee build.log
+          make_args=(-C kernel O=out LD=ld.lld AR=llvm-ar NM=llvm-nm
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
+            "KCFLAGS=-Wno-incompatible-function-pointer-types -Wno-error")
+          # Surface VFS/driver port errors before spending time compiling unrelated vendor drivers.
+          make "${make_args[@]}" -k -j"$(nproc)" fs/ drivers/kernelsu/ 2>&1 | tee build.log
+          make "${make_args[@]}" -j"$(nproc)" Image dtbs modules 2>&1 | tee -a build.log
           make -C kernel O=out modules_install INSTALL_MOD_PATH=modules_install
           # Defined symbols prove both the VFS implementation and its control plane reached vmlinux.
           llvm-nm --defined-only kernel/out/vmlinux > kernel/out/defined-symbols.txt

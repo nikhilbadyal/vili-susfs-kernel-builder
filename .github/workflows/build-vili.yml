@@ -1,141 +1,140 @@
-# Build a vili (Xiaomi Mi 11T Pro, SM8350) 5.4 kernel with KernelSU-Next + SuSFS.
-#
-# The source (Spanish-or-Vanish@vili_ksu-302) ALREADY ships the susfs kernel code
-# (fs/susfs.c + hooks) via its pershoot/KernelSU-Next@next-susfs submodule; the stock
-# TitanicExtended build just never enabled CONFIG_KSU_SUSFS. So we do NOT patch susfs —
-# we keep the matched pershoot KSU-side, enable+verify the configs, and build with
-# loystonpais's vili recipe (merged QGKI defconfig incl vili_QGKI.config,
-# TARGET_PRODUCT=vili, proper dtbo/dtb/modules packaging). clang-14 is proven on this
-# exact SM8350 5.4.302 susfs kernel (noxcis).
+# Use the maintained non-GKI driver and a pinned VFS patch, rather than the kernel's obsolete submodule.
 name: Build vili KSU-Next SUSFS
 
 on:
   workflow_dispatch:
-    inputs:
-      ksu_ref:
-        description: "Optional KernelSU-Next ref override (blank = tree's pershoot next-susfs, which matches the kernel's susfs hooks)."
-        default: ""
+
+# Read-only access is sufficient for checkout and public source verification.
+permissions:
+  contents: read
 
 env:
   KERNEL_REPO: https://github.com/Spanish-or-Vanish/kernel_xiaomi_sm8350
-  KERNEL_BRANCH: vili_ksu-302
+  KERNEL_REF: d043cb6acb952f44241c9af113ebd4f8865dda73
+  # This official legacy snapshot contains the v3.4.2 backports and UAPI 5; the next commit introduces development UAPI 6.
+  KSU_REPO: https://github.com/KernelSU-Next/KernelSU-Next
+  KSU_REF: 465490a26667ba4cf00b3be975a7e28e53978829
+  MANAGER_REF: 4c706b5938665866ebe16944a481a7b91e3396af
   ANYKERNEL_REPO: https://github.com/loystonpais/AnyKernel3
   ANYKERNEL_REF: a4ffe92b9b05b058960079e9b6b029f7dfe954f2
 
 jobs:
   build:
     runs-on: namespace-profile-kernel
+    env:
+      ARCH: arm64
+      LLVM: "1"
+      LLVM_IAS: "1"
+      CROSS_COMPILE: aarch64-linux-gnu-
+      CLANG_TRIPLE: aarch64-linux-gnu-
+      TARGET_PRODUCT: vili
     steps:
-      - name: Runner info
-        run: df -h / | tail -1; nproc; free -h | head -2
+      # Local patches and verification must come from the exact dispatched builder revision.
+      - uses: actions/checkout@v4
 
-      - name: Install toolchain (clang-14 + aarch64 gcc)
+      - name: Install proven vili toolchain
         run: |
+          # Keep the device's previously successful compiler while changing the root/VFS integration.
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             clang-14 lld-14 llvm-14 gcc g++ gcc-aarch64-linux-gnu \
             make bc bison flex libssl-dev libelf-dev kmod dwarves \
-            device-tree-compiler openssl python3 cpio lz4 gzip xz-utils zstd git perl zip
+            device-tree-compiler openssl python3 cpio lz4 gzip xz-utils zstd git perl zip curl
           for t in clang clang++ clang-cpp ld.lld llvm-ar llvm-nm llvm-objcopy \
                    llvm-objdump llvm-readelf llvm-strip llvm-size llvm-strings \
                    llvm-readobj llvm-config; do
-            sudo ln -sf "/usr/bin/${t}-14" "/usr/bin/${t}" 2>/dev/null || true
+            sudo ln -sf "/usr/bin/${t}-14" "/usr/bin/${t}"
           done
-          clang --version | head -1
+          clang --version
 
-      - name: Clone kernel source (+ submodules)
+      - name: Prepare pinned current-API sources
         run: |
-          git clone --depth 1 -b "$KERNEL_BRANCH" "$KERNEL_REPO" kernel
-          cd kernel
-          git submodule update --init || true  # full (not --depth 1) so KSU version counts correctly
+          # Fetch the kernel without initializing its old pershoot submodule.
+          git init kernel
+          git -C kernel remote add origin "$KERNEL_REPO"
+          git -C kernel fetch --depth 1 origin "$KERNEL_REF"
+          git -C kernel checkout --detach FETCH_HEAD
+          # Full driver history is required for its real version calculation; never spoof the version.
+          git clone --branch legacy "$KSU_REPO" kernel/KernelSU-Next
+          git -C kernel/KernelSU-Next checkout --detach "$KSU_REF"
+          # Apply complete end-state patches atomically, with no ignored rejects or dual integration paths.
+          git -C kernel apply --check ../patches/vili-susfs-2.3.0.patch
+          git -C kernel apply ../patches/vili-susfs-2.3.0.patch
+          git -C kernel/KernelSU-Next apply --check ../../patches/ksu-legacy-susfs.patch
+          git -C kernel/KernelSU-Next apply ../../patches/ksu-legacy-susfs.patch
+          # Verify against the actual released manager source, not an assumed minimum version.
+          curl -fSL "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/$MANAGER_REF/manager/app/src/main/java/com/rifsxd/ksunext/Natives.kt" -o manager-Natives.kt
+          curl -fSL "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/$MANAGER_REF/uapi/supercall.h" -o manager-supercall.h
 
-      - name: Prepare KernelSU-Next (version + optional override)
-        working-directory: kernel/KernelSU-Next
+      - name: Configure vili and verify current API plus SUSFS
         run: |
-          # Full history so the Makefile's git-describe/rev-list produce a valid KSU version
-          # (a shallow count yields a low version the manager rejects).
-          git fetch --unshallow --tags 2>/dev/null || git fetch --tags --depth 5000 origin || true
-          if [ -n "${{ inputs.ksu_ref }}" ]; then
-            git remote set-url origin https://github.com/KernelSU-Next/KernelSU-Next.git || true
-            git fetch --tags --force origin || true
-            git checkout "${{ inputs.ksu_ref }}" 2>/dev/null || git checkout "tags/${{ inputs.ksu_ref }}" 2>/dev/null || true
-          fi
-          KSU_GIT_VERSION="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
-          echo "KSU_GIT_VERSION=${KSU_GIT_VERSION}" >> "$GITHUB_ENV"
-          echo "KSU-Next: $(git describe --tags 2>/dev/null || git rev-parse --short HEAD) | git-version ${KSU_GIT_VERSION}"
+          # Preserve the complete vili device fragments rather than using a generic SM8350 config.
+          make -C kernel O=out vendor/lahaina-qgki_defconfig vendor/debugfs.config vendor/xiaomi_QGKI.config vendor/vili_QGKI.config
+          # Keep the known kprobe root mechanism; the separate VFS patch supplies SUSFS hiding.
+          kernel/scripts/config --file kernel/out/.config \
+            -e KSU -d KSU_MANUAL_HOOK -e KSU_KPROBES_HOOK -d KSU_SYSCALL_TABLE_HOOK \
+            -e THREAD_INFO_IN_TASK -e IKCONFIG -e IKCONFIG_PROC \
+            -e KSU_SUSFS -e KSU_SUSFS_SUS_PATH -e KSU_SUSFS_SUS_MOUNT \
+            -e KSU_SUSFS_SUS_KSTAT -e KSU_SUSFS_SPOOF_UNAME -e KSU_SUSFS_ENABLE_LOG \
+            -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            -e KSU_SUSFS_OPEN_REDIRECT -e KSU_SUSFS_SUS_MAP
+          make -C kernel O=out olddefconfig
+          python3 scripts/verify-vili.py sources
 
-      - name: Enable KSU + SUSFS in base defconfig
-        working-directory: kernel
+      - name: Build Image, device trees and modules
+        env:
+          KBUILD_BUILD_USER: ci
+          KBUILD_BUILD_HOST: github
         run: |
-          cat >> arch/arm64/configs/vendor/lahaina-qgki_defconfig <<'CFG'
-          CONFIG_KSU=y
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_SUS_PATH=y
-          CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_KSTAT=y
-          CONFIG_KSU_SUSFS_SUS_MAP=y
-          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
-          CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
-          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-          CONFIG_KSU_SUSFS_ENABLE_LOG=y
-          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-          CFG
-
-      - name: Configure (merged vili QGKI defconfig) + verify SUSFS enabled
-        working-directory: kernel
-        env: { ARCH: arm64, LLVM: "1", LLVM_IAS: "1", CROSS_COMPILE: aarch64-linux-gnu-, CLANG_TRIPLE: aarch64-linux-gnu-, TARGET_PRODUCT: vili }
-        run: |
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            vendor/lahaina-qgki_defconfig vendor/debugfs.config \
-            vendor/xiaomi_QGKI.config vendor/vili_QGKI.config
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-          echo ">>> SUSFS config state:"; grep -E 'CONFIG_KSU(_SUSFS)?(_[A-Z_]+)?=' out/.config | sort || true
-          # Hard-fail if the key options didn't take — no point building a susfs-less kernel.
-          grep -q '^CONFIG_KSU=y' out/.config          || { echo "::error::CONFIG_KSU not enabled"; exit 1; }
-          grep -q '^CONFIG_KSU_SUSFS=y' out/.config     || { echo "::error::CONFIG_KSU_SUSFS not enabled"; exit 1; }
-          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y' out/.config || { echo "::error::SUS_MOUNT not enabled"; exit 1; }
-
-      - name: Build Image + dtbs + modules
-        working-directory: kernel
-        env: { ARCH: arm64, LLVM: "1", LLVM_IAS: "1", CROSS_COMPILE: aarch64-linux-gnu-, CLANG_TRIPLE: aarch64-linux-gnu-, TARGET_PRODUCT: vili, KBUILD_BUILD_USER: ci, KBUILD_BUILD_HOST: github }
-        run: |
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 LD=ld.lld AR=llvm-ar NM=llvm-nm \
+          # Preserve existing vendor warning policy; integration errors still fail the build.
+          make -C kernel O=out LD=ld.lld AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             KCFLAGS="-Wno-incompatible-function-pointer-types -Wno-error" \
-            -j"$(nproc)" Image dtbs modules
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 modules_install INSTALL_MOD_PATH=modules_install
-          ls -la out/arch/arm64/boot/
-          # Verify susfs actually compiled into the kernel image.
-          echo ">>> susfs symbols in vmlinux:"; grep -aoE 'susfs[a-z_]*' out/vmlinux 2>/dev/null | sort -u | head || echo "NONE"
+            -j"$(nproc)" Image dtbs modules 2>&1 | tee build.log
+          make -C kernel O=out modules_install INSTALL_MOD_PATH=modules_install
+          # Defined symbols prove both the VFS implementation and its control plane reached vmlinux.
+          llvm-nm --defined-only kernel/out/vmlinux > kernel/out/defined-symbols.txt
+          python3 scripts/verify-vili.py compiled
 
-      - name: Package with loystonpais AnyKernel3
-        working-directory: kernel
+      - name: Package exact vili outputs
         run: |
-          git clone "$ANYKERNEL_REPO" AK && (cd AK && git checkout "$ANYKERNEL_REF")
-          cd AK
+          git clone "$ANYKERNEL_REPO" kernel/AK
+          git -C kernel/AK checkout --detach "$ANYKERNEL_REF"
+          cd kernel/AK
           cp ../out/arch/arm64/boot/Image Image
-          DTBO=$(find ../out/arch/arm64/boot/dts -iname 'vili-sm8350-overlay.dtbo' 2>/dev/null | head -1)
-          [ -z "$DTBO" ] && DTBO=$(find ../out/arch/arm64/boot/dts -iname '*vili*overlay*.dtbo' 2>/dev/null | head -1)
-          if [ -n "$DTBO" ]; then python3 mkdtboimg.py create dtbo.img --page_size=4096 "$DTBO"; else echo "::warning::vili overlay dtbo not found"; fi
-          DTB=$(find ../out/arch/arm64/boot/dts -iname 'lahaina-v2.1.dtb' 2>/dev/null | head -1)
-          [ -z "$DTB" ] && DTB=$(find ../out/arch/arm64/boot/dts -iname 'lahaina*.dtb' 2>/dev/null | head -1)
-          if [ -n "$DTB" ]; then cp "$DTB" dtb; else echo "::warning::lahaina dtb not found"; fi
+          # Missing device-specific trees must stop packaging, not fall back to another board.
+          cp ../out/arch/arm64/boot/dts/vendor/qcom/lahaina-v2.1.dtb dtb
+          python3 mkdtboimg.py create dtbo.img --page_size=4096 ../out/arch/arm64/boot/dts/vendor/qcom/vili-sm8350-overlay.dtbo
           mkdir -p modules/vendor/lib/modules
-          if [ -d ../out/modules_install/lib/modules ]; then
-            ./place-modules.sh ../out/modules_install/lib/modules/*/ modules/vendor/lib/modules "/vendor/lib/modules" || true
-            find modules -name '*.ko' -exec llvm-strip --strip-unneeded -g {} \; || true
-          fi
-          sed -i 's/device\.name1=.*/device.name1=vili/' anykernel.sh || true
-          echo ">>> AnyKernel contents:"; ls -la Image dtb dtbo.img 2>/dev/null; find modules -name '*.ko' | wc -l
-          zip -r9 ../../vili-ksunext-susfs.zip . -x '.git/*' -x '*.zip' -x '.build-placeholder'
+          ./place-modules.sh ../out/modules_install/lib/modules/*/ modules/vendor/lib/modules /vendor/lib/modules
+          find modules -name '*.ko' -exec llvm-strip --strip-unneeded -g {} \;
+          sed -i 's/device\.name1=.*/device.name1=vili/' anykernel.sh
+          cp ../../build-info.json build-info.json
+          zip -r9 ../../vili-current-api-susfs.zip . -x '.git/*' -x '*.zip' -x '.build-placeholder'
+          cd ../..
+          python3 scripts/verify-vili.py package
+          sha256sum vili-current-api-susfs.zip > SHA256SUMS
 
-      - name: Upload flashable zip
+      # Retain enough evidence to diagnose a failed build without publishing an unverified flashable artifact.
+      - name: Upload build evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vili-ksunext-susfs
-          path: vili-ksunext-susfs.zip
+          name: vili-build-evidence
+          path: |
+            kernel/out/.config
+            kernel/out/defined-symbols.txt
+            build.log
+            build-info.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+      - name: Upload verified flashable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: vili-current-api-susfs
+          path: |
+            vili-current-api-susfs.zip
+            SHA256SUMS
+            build-info.json
           if-no-files-found: error

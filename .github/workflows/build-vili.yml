@@ -67,6 +67,9 @@ jobs:
           git -C kernel apply ../patches/vili-current-ksu-link.patch
           git -C kernel apply --check ../patches/vili-lineage-susfs-2.3.0.patch
           git -C kernel apply ../patches/vili-lineage-susfs-2.3.0.patch
+          # Prepare the unmount API before parallel builds; the driver's late Kbuild injection can race fs/namespace.o.
+          git -C kernel apply --check ../patches/vili-path-umount.patch
+          git -C kernel apply ../patches/vili-path-umount.patch
           git -C kernel/KernelSU-Next apply --check ../../patches/ksu-legacy-susfs.patch
           git -C kernel/KernelSU-Next apply ../../patches/ksu-legacy-susfs.patch
           # Check the published manager contract rather than changing the reported driver version.

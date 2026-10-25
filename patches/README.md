@@ -23,6 +23,8 @@ The integration is custom and needs runtime testing. Compilation proves neither 
 
 Dispatch `Build vili KSU-Next SUSFS` on the feature branch. The workflow strictly applies both patches, checks resolved configuration and the actual released manager contract, then builds and checks defined symbols, compiler-recorded version, the image's embedded configuration, device-tree formats, module ELF headers and AnyKernel device targeting. The artifact includes `build-info.json` and `SHA256SUMS`.
 
+For a prepared source tree, `python3 scripts/test-susfs-control.py kernel/KernelSU-Next/kernel/feature/susfs_control.c kernel/include/linux/susfs_def.h` checks deferred execution and failure cleanup with host stubs. CI compilation checks the actual kernel headers and ABI; this host test does not replace runtime testing.
+
 The source tree already contains two vendor touchscreen `.rej` files unrelated to this integration. The verification checks for newly created untracked rejects rather than deleting those vendor files.
 
 AnyKernel writes boot-related partitions, including vendor_boot. Keep the existing verified backups of boot_a, dtbo_a and vendor_boot_a before deciding to flash. This builder does not flash or reboot a device.

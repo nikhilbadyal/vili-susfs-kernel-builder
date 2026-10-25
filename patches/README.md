@@ -13,6 +13,8 @@ The build targets Xiaomi 11T Pro (`vili`), Linux 5.4.302, the released KernelSU-
 
 ## End-state patches
 
+`anykernel-ksunext.patch` detects the installed root daemon instead of a manager package directory that may be encrypted in recovery. It installs the helper as a directory module for current KernelSU-Next, removes obsolete ext4 module-image staging, and aborts if systemless storage or the root installation is unavailable. A systemless request must never fall through to direct vendor/system writes.
+
 `vili-susfs-2.3.0.patch` replaces the existing v1.5.9 VFS implementation. It removes the old SUSFS import (`cd949e04`) and old manual root call sites (`30fdd274`), applies the supplied v2.3.0 filesystem changes, and resolves the two map-display hunks around the kernel's existing vili presentation code. The port supplies the missing stat definitions and uses the upstream filename helpers in the SD-card monitor, matching vili's qstr-based fsnotify ABI. The init transition exception uses the current driver's `ksu` SELinux domain. Device drivers, DTB selection and the proven compiler recipe are preserved.
 
 `ksu-legacy-susfs.patch` adds the VFS command dispatcher, SID cache and process-flag updates to the official legacy driver. It keeps that driver's maintained kprobe root hooks, permission checks, manager detection, module unmount mechanism and UAPI. Root-only SUSFS commands use its existing reboot control hook and defer execution to task work before userspace resumes, so sleeping handlers never run inside a kprobe callback. The VFS flags are refreshed as apps specialize, and SUSFS path-refresh work runs after the existing unmount handler. No old command aliases or deprecated operation emulation are provided.

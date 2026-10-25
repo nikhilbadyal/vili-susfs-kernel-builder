@@ -108,6 +108,9 @@ jobs:
         run: |
           git clone "$ANYKERNEL_REPO" kernel/AK
           git -C kernel/AK checkout --detach "$ANYKERNEL_REF"
+          # KernelSU-Next uses daemon detection and directory modules, including in encrypted recovery.
+          git -C kernel/AK apply --check ../../patches/anykernel-ksunext.patch
+          git -C kernel/AK apply ../../patches/anykernel-ksunext.patch
           cd kernel/AK
           cp ../out/arch/arm64/boot/Image Image
           # Missing device-specific trees must stop packaging, not fall back to another board.

@@ -97,6 +97,13 @@ def verify_package():
         assert b'v2.3.0' in kernel
         script = archive.read('anykernel.sh').decode()
         assert 'device.name1=vili' in script and 'IS_SLOT_DEVICE=1;' in script
+        # Encrypted recovery must detect Next independently of the old manager package and module images.
+        installer = archive.read('META-INF/com/google/android/update-binary').decode()
+        core = archive.read('tools/ak3-core.sh').decode()
+        assert '[ -f /data/adb/ksud ]' in core
+        assert '[ -f /data/adb/ksud -a -f $AKHOME/kernelsu_patched ]' in installer
+        assert 'modules_update.img' not in installer
+        assert 'refusing writes to vendor/system' in installer
         modules = [name for name in archive.namelist() if name.endswith('.ko')]
         assert modules, 'No device modules were packaged'
         assert all(archive.read(name).startswith(b'\x7fELF') for name in modules)

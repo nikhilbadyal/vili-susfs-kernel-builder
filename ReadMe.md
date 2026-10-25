@@ -1,3 +1,5 @@
+> **Xiaomi 11T Pro (vili):** use `.github/workflows/build-vili.yml` for the current-API KernelSU-Next + SUSFS build. The source pins, real driver/API versions, manager compatibility and verification gates are documented in [patches/README.md](patches/README.md). The workflow produces `vili-current-api-susfs.zip`; it does not flash a device.
+
 # Shipping the Docker kernel build system as a standalone GitHub repo
 
 This document explains how the Docker build works and how to publish it as its own repo (without kernel source, firmware, or build outputs).

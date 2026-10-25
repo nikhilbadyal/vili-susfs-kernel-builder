@@ -1,4 +1,4 @@
-> **Xiaomi 11T Pro (vili):** use `.github/workflows/build-vili.yml` for the current-API KernelSU-Next + SUSFS build. The source pins, real driver/API versions, manager compatibility and verification gates are documented in [patches/README.md](patches/README.md). The workflow produces `vili-current-api-susfs.zip`; it does not flash a device.
+> **Xiaomi 11T Pro (vili):** the previous current-API KernelSU-Next + SUSFS artifact bootlooped during device testing and was rolled back. `.github/workflows/build-vili.yml` now builds a **boot-only diagnostic baseline without root or SUSFS**, using the newer published source and the working phone's configuration. See [baseline notes](docs/VILI_BASELINE.md). Current KernelSU and SUSFS integration remains unfinished; the older static verification results do not establish boot compatibility.
 
 # Shipping the Docker kernel build system as a standalone GitHub repo
 

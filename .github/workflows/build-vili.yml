@@ -1,25 +1,21 @@
-# Use the maintained non-GKI driver and a pinned VFS patch, rather than the kernel's obsolete submodule.
-name: Build vili KSU-Next SUSFS
+# Establish ROM compatibility separately from root and VFS changes after the previous integration bootlooped.
+name: Build vili boot baseline
 
 on:
   workflow_dispatch:
 
-# Read-only access is sufficient for checkout and public source verification.
+# This workflow only reads sources and uploads evidence; it cannot flash a device.
 permissions:
   contents: read
 
 env:
   KERNEL_REPO: https://github.com/Spanish-or-Vanish/kernel_xiaomi_sm8350
-  KERNEL_REF: d043cb6acb952f44241c9af113ebd4f8865dda73
-  # This official legacy snapshot contains the v3.4.2 backports and UAPI 5; the next commit introduces development UAPI 6.
-  KSU_REPO: https://github.com/KernelSU-Next/KernelSU-Next
-  KSU_REF: 465490a26667ba4cf00b3be975a7e28e53978829
-  MANAGER_REF: 4c706b5938665866ebe16944a481a7b91e3396af
+  KERNEL_REF: 3679ab828bc4464e4e41152154ca0f5c6ed361e6
   ANYKERNEL_REPO: https://github.com/loystonpais/AnyKernel3
   ANYKERNEL_REF: a4ffe92b9b05b058960079e9b6b029f7dfe954f2
 
 jobs:
-  build:
+  baseline:
     runs-on: namespace-profile-kernel
     env:
       ARCH: arm64
@@ -27,125 +23,79 @@ jobs:
       LLVM_IAS: "1"
       CROSS_COMPILE: aarch64-linux-gnu-
       CLANG_TRIPLE: aarch64-linux-gnu-
-      TARGET_PRODUCT: vili
+      KBUILD_BUILD_USER: ci
+      KBUILD_BUILD_HOST: github
     steps:
-      # Local patches and verification must come from the exact dispatched builder revision.
+      # Configuration and scripts must come from the exact requested builder revision.
       - uses: actions/checkout@v4
 
-      - name: Install proven vili toolchain
+      - name: Install LLVM 18 toolchain
         run: |
-          # Keep the device's previously successful compiler while changing the root/VFS integration.
+          # Titanic uses LLVM 18; do not carry the older tree's LLVM 14 recipe into this baseline.
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            clang-14 lld-14 llvm-14 gcc g++ gcc-aarch64-linux-gnu \
+            clang-18 lld-18 llvm-18 gcc g++ gcc-aarch64-linux-gnu \
             make bc bison flex libssl-dev libelf-dev kmod dwarves \
-            device-tree-compiler openssl python3 cpio lz4 gzip xz-utils zstd git perl zip curl
-          for t in clang clang++ clang-cpp ld.lld llvm-ar llvm-nm llvm-objcopy \
-                   llvm-objdump llvm-readelf llvm-strip llvm-size llvm-strings \
-                   llvm-readobj llvm-config; do
-            sudo ln -sf "/usr/bin/${t}-14" "/usr/bin/${t}"
-          done
-          clang --version
+            openssl python3 cpio lz4 gzip xz-utils zstd git perl zip curl
+          echo /usr/lib/llvm-18/bin >> "$GITHUB_PATH"
 
-      - name: Prepare pinned current-API sources
+      - name: Resolve known-working device configuration
         run: |
-          # Fetch the kernel without initializing its old pershoot submodule.
+          # The newer published branch includes filesystem and RCU backports absent from the failed source.
           git init kernel
           git -C kernel remote add origin "$KERNEL_REPO"
           git -C kernel fetch --depth 1 origin "$KERNEL_REF"
           git -C kernel checkout --detach FETCH_HEAD
-          # Full driver history is required for its real version calculation; never spoof the version.
-          git clone --branch legacy "$KSU_REPO" kernel/KernelSU-Next
-          git -C kernel/KernelSU-Next checkout --detach "$KSU_REF"
-          # Apply complete end-state patches atomically, with no ignored rejects or dual integration paths.
-          git -C kernel apply --check ../patches/vili-susfs-2.3.0.patch
-          git -C kernel apply ../patches/vili-susfs-2.3.0.patch
-          git -C kernel/KernelSU-Next apply --check ../../patches/ksu-legacy-susfs.patch
-          git -C kernel/KernelSU-Next apply ../../patches/ksu-legacy-susfs.patch
-          # Verify against the actual released manager source, not an assumed minimum version.
-          curl -fSL "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/$MANAGER_REF/manager/app/src/main/java/com/rifsxd/ksunext/Natives.kt" -o manager-Natives.kt
-          curl -fSL "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/$MANAGER_REF/uapi/supercall.h" -o manager-supercall.h
-
-      - name: Configure vili and verify current API plus SUSFS
-        run: |
-          # Preserve the complete vili device fragments rather than using a generic SM8350 config.
-          make -C kernel O=out vendor/lahaina-qgki_defconfig vendor/debugfs.config vendor/xiaomi_QGKI.config vendor/vili_QGKI.config
-          # Keep the known kprobe root mechanism; the separate VFS patch supplies SUSFS hiding.
-          kernel/scripts/config --file kernel/out/.config \
-            -e KPROBES -e KRETPROBES -e KPROBE_EVENTS -e KPROBES_QGKI \
-            -e KSU -d KSU_MANUAL_HOOK -e KSU_KPROBES_HOOK -d KSU_SYSCALL_TABLE_HOOK \
-            -e THREAD_INFO_IN_TASK -e IKCONFIG -e IKCONFIG_PROC \
-            -e KSU_SUSFS -e KSU_SUSFS_SUS_PATH -e KSU_SUSFS_SUS_MOUNT \
-            -e KSU_SUSFS_SUS_KSTAT -e KSU_SUSFS_SPOOF_UNAME -e KSU_SUSFS_ENABLE_LOG \
-            -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
-            -e KSU_SUSFS_OPEN_REDIRECT -e KSU_SUSFS_SUS_MAP
+          mkdir -p kernel/out
+          cp configs/vili-working.config kernel/out/.config
+          # Give the diagnostic build a distinct name without changing device feature selection.
+          kernel/scripts/config --file kernel/out/.config --set-str LOCALVERSION -vili-baseline -d LOCALVERSION_AUTO
           make -C kernel O=out olddefconfig
-          python3 scripts/verify-vili.py sources
+          python3 scripts/verify-vili-baseline.py configured
 
-      - name: Build Image, device trees and modules
-        env:
-          KBUILD_BUILD_USER: ci
-          KBUILD_BUILD_HOST: github
+      - name: Build baseline Image
         run: |
-          # Preserve the make exit status when recording output with tee.
+          # Preserve pipeline failure and the vendor source's non-fatal warning policy.
           set -euo pipefail
-          # Preserve existing vendor warning policy; integration errors still fail the build.
+          clang --version
           make_args=(-C kernel O=out LD=ld.lld AR=llvm-ar NM=llvm-nm
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
             "KCFLAGS=-Wno-incompatible-function-pointer-types -Wno-error")
-          # Generate SELinux headers before compiling consumers outside its own directory.
-          make "${make_args[@]}" -j"$(nproc)" security/selinux/ 2>&1 | tee build.log
-          # Compile each changed subsystem explicitly before unrelated vendor drivers.
-          make "${make_args[@]}" -k -j"$(nproc)" fs/ 2>&1 | tee -a build.log
-          make "${make_args[@]}" -k -j"$(nproc)" drivers/kernelsu/ 2>&1 | tee -a build.log
-          make "${make_args[@]}" -j"$(nproc)" Image dtbs modules 2>&1 | tee -a build.log
-          make -C kernel O=out modules_install INSTALL_MOD_PATH=modules_install
-          # Defined symbols prove both the VFS implementation and its control plane reached vmlinux.
-          llvm-nm --defined-only kernel/out/vmlinux > kernel/out/defined-symbols.txt
-          python3 scripts/verify-vili.py compiled
+          # Generate shared SELinux headers before their built-in consumers.
+          make "${make_args[@]}" -j"$(nproc)" security/selinux/ 2>&1 | tee baseline-build.log
+          make "${make_args[@]}" -j"$(nproc)" Image 2>&1 | tee -a baseline-build.log
 
-      - name: Package exact vili outputs
+      - name: Package boot-only baseline
         run: |
           git clone "$ANYKERNEL_REPO" kernel/AK
           git -C kernel/AK checkout --detach "$ANYKERNEL_REF"
-          # KernelSU-Next uses daemon detection and directory modules, including in encrypted recovery.
-          git -C kernel/AK apply --check ../../patches/anykernel-ksunext.patch
-          git -C kernel/AK apply ../../patches/anykernel-ksunext.patch
-          cd kernel/AK
-          cp ../out/arch/arm64/boot/Image Image
-          # Missing device-specific trees must stop packaging, not fall back to another board.
-          cp ../out/arch/arm64/boot/dts/vendor/qcom/lahaina-v2.1.dtb dtb
-          python3 mkdtboimg.py create dtbo.img --page_size=4096 ../out/arch/arm64/boot/dts/vendor/qcom/vili-sm8350-overlay.dtbo
-          mkdir -p modules/vendor/lib/modules
-          ./place-modules.sh ../out/modules_install/lib/modules/*/ modules/vendor/lib/modules /vendor/lib/modules
-          find modules -name '*.ko' -exec llvm-strip --strip-unneeded -g {} \;
-          sed -i 's/device\.name1=.*/device.name1=vili/' anykernel.sh
-          cp ../../build-info.json build-info.json
-          zip -r9 ../../vili-current-api-susfs.zip . -x '.git/*' -x '*.zip' -x '.build-placeholder'
-          cd ../..
-          python3 scripts/verify-vili.py package
-          sha256sum vili-current-api-susfs.zip > SHA256SUMS
+          cp AnyKernel/baseline-anykernel.sh kernel/AK/anykernel.sh
+          cp kernel/out/arch/arm64/boot/Image kernel/AK/Image
+          cp baseline-info.json kernel/AK/baseline-info.json
+          # Exclude DTB/DTBO, vendor_boot, module and ramdisk payloads to isolate the kernel.
+          (cd kernel/AK && zip -r9 ../../vili-boot-baseline.zip Image anykernel.sh baseline-info.json tools META-INF)
+          python3 scripts/verify-vili-baseline.py package
+          sha256sum vili-boot-baseline.zip > baseline-SHA256SUMS
 
-      # Retain enough evidence to diagnose a failed build without publishing an unverified flashable artifact.
-      - name: Upload build evidence
+      - name: Upload baseline evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vili-build-evidence
+          name: vili-baseline-evidence
           path: |
             kernel/out/.config
-            kernel/out/defined-symbols.txt
-            build.log
-            build-info.json
+            baseline-info.json
+            baseline-build.log
           include-hidden-files: true
           if-no-files-found: ignore
 
-      - name: Upload verified flashable zip
+      # Publish a package only after the embedded config and payload checks pass.
+      - name: Upload verified baseline package
         uses: actions/upload-artifact@v4
         with:
-          name: vili-current-api-susfs
+          name: vili-boot-baseline
           path: |
-            vili-current-api-susfs.zip
-            SHA256SUMS
-            build-info.json
+            vili-boot-baseline.zip
+            baseline-SHA256SUMS
+            baseline-info.json
           if-no-files-found: error

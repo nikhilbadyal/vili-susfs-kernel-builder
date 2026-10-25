@@ -279,7 +279,7 @@ index 3dddf937..cc57fb7f 100644
      // Handle kernel umount
      ksu_handle_umount(old_uid, new_uid);
 +#ifdef CONFIG_KSU_SUSFS
-+    /* Run path refreshes after unmounting and outside the syscall's immediate path. */
++    /* Defer path refreshes outside the syscall's immediate path. */
 +    schedule_work(&susfs_extra_works);
 +#endif
  

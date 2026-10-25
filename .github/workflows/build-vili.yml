@@ -87,6 +87,8 @@ jobs:
           KBUILD_BUILD_USER: ci
           KBUILD_BUILD_HOST: github
         run: |
+          # Preserve the make exit status when recording output with tee.
+          set -euo pipefail
           # Preserve existing vendor warning policy; integration errors still fail the build.
           make -C kernel O=out LD=ld.lld AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \

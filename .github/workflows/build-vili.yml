@@ -1,22 +1,20 @@
 # Build a vili (Xiaomi Mi 11T Pro, SM8350) 5.4 kernel with KernelSU-Next + SuSFS.
 #
-# Recipe follows loystonpais's authoritative vili build (merged QGKI defconfig incl.
-# vili_QGKI.config, TARGET_PRODUCT=vili, proper dtbo/dtb/modules packaging) applied to
-# the SAME source the user's ROM kernel is built from (Spanish-or-Vanish@vili_ksu-302),
-# so the result matches the device with no drift. We add the susfs kernel-5.4 VFS patch
-# (the half the stock TitanicExtended build omitted) and enable the SUSFS configs.
-# clang-14 is used because noxcis proved it on the identical SM8350 5.4.302 susfs kernel.
+# The source (Spanish-or-Vanish@vili_ksu-302) ALREADY ships the susfs kernel code
+# (fs/susfs.c + hooks) via its pershoot/KernelSU-Next@next-susfs submodule; the stock
+# TitanicExtended build just never enabled CONFIG_KSU_SUSFS. So we do NOT patch susfs —
+# we keep the matched pershoot KSU-side, enable+verify the configs, and build with
+# loystonpais's vili recipe (merged QGKI defconfig incl vili_QGKI.config,
+# TARGET_PRODUCT=vili, proper dtbo/dtb/modules packaging). clang-14 is proven on this
+# exact SM8350 5.4.302 susfs kernel (noxcis).
 name: Build vili KSU-Next SUSFS
 
 on:
   workflow_dispatch:
     inputs:
       ksu_ref:
-        description: "KernelSU-Next ref (tag/branch). v3.4.2 = latest; blank = keep source submodule (pershoot next-susfs)."
-        default: "v3.4.2"
-      susfs_branch:
-        description: "susfs4ksu branch for this kernel."
-        default: "kernel-5.4"
+        description: "Optional KernelSU-Next ref override (blank = tree's pershoot next-susfs, which matches the kernel's susfs hooks)."
+        default: ""
 
 env:
   KERNEL_REPO: https://github.com/Spanish-or-Vanish/kernel_xiaomi_sm8350
@@ -26,16 +24,12 @@ env:
 
 jobs:
   build:
-    # Namespace custom runner (16 GB RAM, 8 vCPU) — faster than the default GitHub runner.
     runs-on: namespace-profile-kernel
     steps:
-      - name: Show runner disk/space
-        run: |
-          df -h / | tail -1; nproc; free -h | head -2
-          # Best-effort reclaim (harmless if dirs are absent on this runner).
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL 2>/dev/null || true
+      - name: Runner info
+        run: df -h / | tail -1; nproc; free -h | head -2
 
-      - name: Install toolchain (clang-14 + aarch64 gcc; proven on SM8350 5.4.302)
+      - name: Install toolchain (clang-14 + aarch64 gcc)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -53,35 +47,24 @@ jobs:
         run: |
           git clone --depth 1 -b "$KERNEL_BRANCH" "$KERNEL_REPO" kernel
           cd kernel
-          git submodule update --init --depth 1 || true
+          git submodule update --init || true  # full (not --depth 1) so KSU version counts correctly
 
-      - name: Pin KernelSU-Next (built-in susfs KSU-side)
+      - name: Prepare KernelSU-Next (version + optional override)
         working-directory: kernel/KernelSU-Next
         run: |
+          # Full history so the Makefile's git-describe/rev-list produce a valid KSU version
+          # (a shallow count yields a low version the manager rejects).
+          git fetch --unshallow --tags 2>/dev/null || git fetch --tags --depth 5000 origin || true
           if [ -n "${{ inputs.ksu_ref }}" ]; then
             git remote set-url origin https://github.com/KernelSU-Next/KernelSU-Next.git || true
-            git fetch --tags --force --depth 1 origin "${{ inputs.ksu_ref }}" 2>/dev/null \
-              || git fetch --tags --force origin || true
-            git checkout "${{ inputs.ksu_ref }}" 2>/dev/null \
-              || git checkout "tags/${{ inputs.ksu_ref }}" 2>/dev/null \
-              || echo "::warning::keeping submodule default (${{ inputs.ksu_ref }} not found)"
+            git fetch --tags --force origin || true
+            git checkout "${{ inputs.ksu_ref }}" 2>/dev/null || git checkout "tags/${{ inputs.ksu_ref }}" 2>/dev/null || true
           fi
-          echo "KSU-Next: $(git describe --tags 2>/dev/null || git rev-parse --short HEAD)"
+          KSU_GIT_VERSION="$(git rev-list --count HEAD 2>/dev/null || echo 0)"
+          echo "KSU_GIT_VERSION=${KSU_GIT_VERSION}" >> "$GITHUB_ENV"
+          echo "KSU-Next: $(git describe --tags 2>/dev/null || git rev-parse --short HEAD) | git-version ${KSU_GIT_VERSION}"
 
-      - name: Apply SuSFS kernel-5.4 VFS patch
-        working-directory: kernel
-        run: |
-          git clone --depth 1 -b "${{ inputs.susfs_branch }}" \
-            https://gitlab.com/simonpunk/susfs4ksu.git ../susfs4ksu
-          cp ../susfs4ksu/kernel_patches/fs/susfs.c fs/ 2>/dev/null || true
-          cp ../susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/ 2>/dev/null || true
-          cp ../susfs4ksu/kernel_patches/include/linux/susfs_def.h include/linux/ 2>/dev/null || true
-          echo ">>> Applying 50_add_susfs_in_kernel-5.4.patch"
-          patch -p1 --fuzz=3 --no-backup-if-mismatch \
-            < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-5.4.patch || true
-          echo ">>> Rejects (if any):"; find . -name '*.rej' -print -exec cat {} \; || true
-
-      - name: Enable KSU + SUSFS configs (into the base defconfig of the merge)
+      - name: Enable KSU + SUSFS in base defconfig
         working-directory: kernel
         run: |
           cat >> arch/arm64/configs/vendor/lahaina-qgki_defconfig <<'CFG'
@@ -92,7 +75,7 @@ jobs:
           CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
           CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
           CONFIG_KSU_SUSFS_SUS_KSTAT=y
-          CONFIG_KSU_SUSFS_SUS_MAPS=y
+          CONFIG_KSU_SUSFS_SUS_MAP=y
           CONFIG_KSU_SUSFS_TRY_UMOUNT=y
           CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
           CONFIG_KSU_SUSFS_SPOOF_UNAME=y
@@ -102,17 +85,19 @@ jobs:
           CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
           CFG
 
-      - name: Configure (merged vili QGKI defconfig)
+      - name: Configure (merged vili QGKI defconfig) + verify SUSFS enabled
         working-directory: kernel
         env: { ARCH: arm64, LLVM: "1", LLVM_IAS: "1", CROSS_COMPILE: aarch64-linux-gnu-, CLANG_TRIPLE: aarch64-linux-gnu-, TARGET_PRODUCT: vili }
         run: |
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            vendor/lahaina-qgki_defconfig \
-            vendor/debugfs.config \
-            vendor/xiaomi_QGKI.config \
-            vendor/vili_QGKI.config
+            vendor/lahaina-qgki_defconfig vendor/debugfs.config \
+            vendor/xiaomi_QGKI.config vendor/vili_QGKI.config
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 olddefconfig
-          echo ">>> SUSFS in .config:"; grep -E 'CONFIG_KSU(_SUSFS)?=' out/.config || true
+          echo ">>> SUSFS config state:"; grep -E 'CONFIG_KSU(_SUSFS)?(_[A-Z_]+)?=' out/.config | sort || true
+          # Hard-fail if the key options didn't take — no point building a susfs-less kernel.
+          grep -q '^CONFIG_KSU=y' out/.config          || { echo "::error::CONFIG_KSU not enabled"; exit 1; }
+          grep -q '^CONFIG_KSU_SUSFS=y' out/.config     || { echo "::error::CONFIG_KSU_SUSFS not enabled"; exit 1; }
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y' out/.config || { echo "::error::SUS_MOUNT not enabled"; exit 1; }
 
       - name: Build Image + dtbs + modules
         working-directory: kernel
@@ -122,34 +107,31 @@ jobs:
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
             KCFLAGS="-Wno-incompatible-function-pointer-types -Wno-error" \
             -j"$(nproc)" Image dtbs modules
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            modules_install INSTALL_MOD_PATH=modules_install
-          echo ">>> boot artifacts:"; ls -la out/arch/arm64/boot/ || true
-          echo ">>> dtbs:"; find out/arch/arm64/boot/dts -name '*vili*' -o -name 'lahaina*.dtb' 2>/dev/null | head
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 modules_install INSTALL_MOD_PATH=modules_install
+          ls -la out/arch/arm64/boot/
+          # Verify susfs actually compiled into the kernel image.
+          echo ">>> susfs symbols in vmlinux:"; grep -aoE 'susfs[a-z_]*' out/vmlinux 2>/dev/null | sort -u | head || echo "NONE"
 
-      - name: Package with loystonpais AnyKernel3 (vili dtbo/dtb/modules)
+      - name: Package with loystonpais AnyKernel3
         working-directory: kernel
         run: |
           git clone "$ANYKERNEL_REPO" AK && (cd AK && git checkout "$ANYKERNEL_REF")
           cd AK
           cp ../out/arch/arm64/boot/Image Image
-          # vili DTBO overlay → dtbo.img (exact name may vary; fall back to any vili overlay)
-          DTBO=$(find ../out/arch/arm64/boot/dts -name 'vili-sm8350-overlay.dtbo' 2>/dev/null | head -1)
+          DTBO=$(find ../out/arch/arm64/boot/dts -iname 'vili-sm8350-overlay.dtbo' 2>/dev/null | head -1)
           [ -z "$DTBO" ] && DTBO=$(find ../out/arch/arm64/boot/dts -iname '*vili*overlay*.dtbo' 2>/dev/null | head -1)
-          [ -n "$DTBO" ] && python3 mkdtboimg.py create dtbo.img --page_size=4096 "$DTBO" || echo "::warning::vili overlay dtbo not found"
-          # platform dtb
-          DTB=$(find ../out/arch/arm64/boot/dts -name 'lahaina-v2.1.dtb' 2>/dev/null | head -1)
+          if [ -n "$DTBO" ]; then python3 mkdtboimg.py create dtbo.img --page_size=4096 "$DTBO"; else echo "::warning::vili overlay dtbo not found"; fi
+          DTB=$(find ../out/arch/arm64/boot/dts -iname 'lahaina-v2.1.dtb' 2>/dev/null | head -1)
           [ -z "$DTB" ] && DTB=$(find ../out/arch/arm64/boot/dts -iname 'lahaina*.dtb' 2>/dev/null | head -1)
-          [ -n "$DTB" ] && cp "$DTB" dtb || echo "::warning::lahaina dtb not found"
-          # modules
+          if [ -n "$DTB" ]; then cp "$DTB" dtb; else echo "::warning::lahaina dtb not found"; fi
           mkdir -p modules/vendor/lib/modules
           if [ -d ../out/modules_install/lib/modules ]; then
             ./place-modules.sh ../out/modules_install/lib/modules/*/ modules/vendor/lib/modules "/vendor/lib/modules" || true
             find modules -name '*.ko' -exec llvm-strip --strip-unneeded -g {} \; || true
           fi
           sed -i 's/device\.name1=.*/device.name1=vili/' anykernel.sh || true
+          echo ">>> AnyKernel contents:"; ls -la Image dtb dtbo.img 2>/dev/null; find modules -name '*.ko' | wc -l
           zip -r9 ../../vili-ksunext-susfs.zip . -x '.git/*' -x '*.zip' -x '.build-placeholder'
-          ls -la ../../vili-ksunext-susfs.zip
 
       - name: Upload flashable zip
         uses: actions/upload-artifact@v4

@@ -1,0 +1,53 @@
+--- a/fs/namespace.c
++++ b/fs/namespace.c
+@@ -1906,6 +1906,39 @@
+  * We now support a flag for forced unmount like the other 'big iron'
+  * unixes. Our API is identical to OSF/1 to avoid making a mess of AMD
+  */
++
++/* Keep the path-based unmount API available before KernelSU's parallel build starts. */
++static int can_umount(const struct path *path, int flags)
++{
++	struct mount *mnt = real_mount(path->mnt);
++
++	if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
++		return -EINVAL;
++	if (!may_mount())
++		return -EPERM;
++	if (path->dentry != path->mnt->mnt_root)
++		return -EINVAL;
++	if (!check_mnt(mnt))
++		return -EINVAL;
++	if (mnt->mnt.mnt_flags & MNT_LOCKED)
++		return -EINVAL;
++	if ((flags & MNT_FORCE) && !capable(CAP_SYS_ADMIN))
++		return -EPERM;
++	return 0;
++}
++
++int path_umount(struct path *path, int flags)
++{
++	struct mount *mnt = real_mount(path->mnt);
++	int ret = can_umount(path, flags);
++
++	if (!ret)
++		ret = do_umount(mnt, flags);
++	/* Consume both path references even on rejection without clearing mnt_expiry_mark. */
++	dput(path->dentry);
++	mntput_no_expire(mnt);
++	return ret;
++}
+ 
+ int ksys_umount(char __user *name, int flags)
+ {
+--- a/fs/internal.h
++++ b/fs/internal.h
+@@ -85,6 +85,8 @@
+ extern int sb_prepare_remount_readonly(struct super_block *);
+ 
+ extern void __init mnt_init(void);
++/* Internal callers transfer their path references to this helper. */
++int path_umount(struct path *path, int flags);
+ 
+ extern int __mnt_want_write_file(struct file *);
+ extern void __mnt_drop_write_file(struct file *);

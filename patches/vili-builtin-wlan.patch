@@ -1,0 +1,384 @@
+--- a/drivers/staging/qca-wifi-host-cmn/utils/nlink/inc/wlan_nlink_srv.h
++++ b/drivers/staging/qca-wifi-host-cmn/utils/nlink/inc/wlan_nlink_srv.h
+@@ -55,7 +55,7 @@
+ 				    struct nlattr *nest, int flags);
+ 
+ /**
+- * nl80211hdr_put() - API to allocate skb for cld80211 msg
++ * wlan_nlink_hdr_put() - API to allocate skb for cld80211 msg
+  * @hdr: nl80211hdr pointer
+  * @portid: Port ID
+  * @nest: pointer of vendor nested attribute
+@@ -81,7 +81,7 @@
+ int nl_srv_bcast(struct sk_buff *skb, int mcgroup_id, int app_id);
+ 
+ /**
+- * nl80211hdr_put() - API to fill genlmsg header
++ * wlan_nlink_hdr_put() - API to fill genlmsg header
+  * @skb: Sk buffer
+  * @portid: Port ID
+  * @seq: Sequence number
+@@ -92,7 +92,7 @@
+  *
+  * Return: Pointer to user specific header/payload
+  */
+-void *nl80211hdr_put(struct sk_buff *skb, uint32_t portid,
++void *wlan_nlink_hdr_put(struct sk_buff *skb, uint32_t portid,
+ 		     uint32_t seq, int flags, uint8_t cmd);
+ #else
+ int nl_srv_ucast(struct sk_buff *skb, int dst_pid, int flag);
+--- a/drivers/staging/qca-wifi-host-cmn/utils/nlink/src/wlan_nlink_srv.c
++++ b/drivers/staging/qca-wifi-host-cmn/utils/nlink/src/wlan_nlink_srv.c
+@@ -295,7 +295,7 @@
+ 		return NULL;
+ 	}
+ 
+-	*hdr = nl80211hdr_put(msg, portid, 0, *flags, WLAN_NL_MSG_OEM);
++	*hdr = wlan_nlink_hdr_put(msg, portid, 0, *flags, WLAN_NL_MSG_OEM);
+ 	if (*hdr == NULL) {
+ 		QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_ERROR,
+ 					"nl80211 hdr put failed");
+@@ -341,7 +341,8 @@
+ 	return 0;
+ }
+ 
+-void *nl80211hdr_put(struct sk_buff *skb, uint32_t portid,
++/* This helper emits the CLD80211 family, unlike the core nl80211 helper. */
++void *wlan_nlink_hdr_put(struct sk_buff *skb, uint32_t portid,
+ 		     uint32_t seq, int flags, uint8_t cmd)
+ {
+ 	struct genl_family *cld80211_fam = cld80211_get_genl_family();
+@@ -370,7 +371,7 @@
+ 	void *hdr;
+ 	struct nlattr *nest;
+ 
+-	hdr = nl80211hdr_put(msg, portid, seq, flags, cmd);
++	hdr = wlan_nlink_hdr_put(msg, portid, seq, flags, cmd);
+ 	if (!hdr) {
+ 		QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_ERROR,
+ 						"nl80211 hdr put failed");
+--- a/drivers/staging/qcacld-3.0/components/ipa/core/inc/wlan_ipa_main.h
++++ b/drivers/staging/qcacld-3.0/components/ipa/core/inc/wlan_ipa_main.h
+@@ -506,12 +506,12 @@
+ 				   uint8_t vdev_id);
+ 
+ /**
+- * ipa_is_ready() - Is IPA register callback is invoked
++ * wlan_ipa_is_ready() - Is IPA register callback is invoked
+  *
+  * Return: true if IPA register callback is invoked or false
+  * otherwise
+  */
+-bool ipa_is_ready(void);
++bool wlan_ipa_is_ready(void);
+ 
+ /**
+  * ipa_init_deinit_lock() - lock ipa init deinit lock
+--- a/drivers/staging/qcacld-3.0/components/ipa/core/src/wlan_ipa_core.c
++++ b/drivers/staging/qcacld-3.0/components/ipa/core/src/wlan_ipa_core.c
+@@ -625,7 +625,7 @@
+ 
+ int wlan_ipa_uc_smmu_map(bool map, uint32_t num_buf, qdf_mem_info_t *buf_arr)
+ {
+-	if (!ipa_is_ready()) {
++	if (!wlan_ipa_is_ready()) {
+ 		ipa_info("IPA is not READY");
+ 		return 0;
+ 	}
+@@ -3474,7 +3474,7 @@
+ 	struct wlan_ipa_iface_context *iface_context;
+ 	int i;
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return QDF_STATUS_SUCCESS;
+ 
+ 	if (!wlan_ipa_uc_is_enabled(ipa_ctx->config))
+--- a/drivers/staging/qcacld-3.0/components/ipa/core/src/wlan_ipa_main.c
++++ b/drivers/staging/qcacld-3.0/components/ipa/core/src/wlan_ipa_main.c
+@@ -165,7 +165,7 @@
+ 		return QDF_STATUS_SUCCESS;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return QDF_STATUS_SUCCESS;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -186,7 +186,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -207,7 +207,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -228,7 +228,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -249,7 +249,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -270,7 +270,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -292,7 +292,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -313,7 +313,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -335,7 +335,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -358,7 +358,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -380,7 +380,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -401,7 +401,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -423,7 +423,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -449,7 +449,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -470,7 +470,7 @@
+ 		return;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -491,7 +491,7 @@
+ 		return QDF_STATUS_SUCCESS;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return QDF_STATUS_SUCCESS;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -512,7 +512,7 @@
+ 		return QDF_STATUS_SUCCESS;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return QDF_STATUS_SUCCESS;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -534,7 +534,7 @@
+ 		return QDF_STATUS_SUCCESS;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return QDF_STATUS_SUCCESS;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -555,7 +555,7 @@
+ 		return QDF_STATUS_SUCCESS;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return QDF_STATUS_SUCCESS;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -575,7 +575,7 @@
+ 
+ 	ipa_init_deinit_lock();
+ 
+-	if (!ipa_is_ready()) {
++	if (!wlan_ipa_is_ready()) {
+ 		ipa_debug("ipa is not ready");
+ 		status = QDF_STATUS_SUCCESS;
+ 		goto out;
+@@ -605,7 +605,7 @@
+ 		return QDF_STATUS_SUCCESS;
+ 	}
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return QDF_STATUS_SUCCESS;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -624,7 +624,7 @@
+ {
+ 	struct wlan_ipa_priv *ipa_obj;
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return QDF_STATUS_SUCCESS;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -651,7 +651,7 @@
+ 		return false;
+ 	}
+ 
+-	if (!ipa_is_ready()) {
++	if (!wlan_ipa_is_ready()) {
+ 		ipa_debug("ipa is not ready");
+ 		return false;
+ 	}
+@@ -670,7 +670,7 @@
+ {
+ 	struct wlan_ipa_priv *ipa_obj;
+ 
+-	if (!ipa_is_ready()) {
++	if (!wlan_ipa_is_ready()) {
+ 		ipa_debug("ipa is not ready");
+ 		return;
+ 	}
+@@ -689,7 +689,7 @@
+ {
+ 	struct wlan_ipa_priv *ipa_obj;
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return QDF_STATUS_SUCCESS;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -706,7 +706,7 @@
+ {
+ 	struct wlan_ipa_priv *ipa_obj;
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -722,7 +722,7 @@
+ {
+ 	struct wlan_ipa_priv *ipa_obj;
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+@@ -835,7 +835,7 @@
+ 	if (!ipa_config_is_enabled())
+ 		return;
+ 
+-	if (!ipa_is_ready())
++	if (!wlan_ipa_is_ready())
+ 		return;
+ 
+ 	ipa_obj = ipa_pdev_get_priv_obj(pdev);
+--- a/drivers/staging/qcacld-3.0/components/ipa/dispatcher/inc/wlan_ipa_obj_mgmt_api.h
++++ b/drivers/staging/qcacld-3.0/components/ipa/dispatcher/inc/wlan_ipa_obj_mgmt_api.h
+@@ -52,7 +52,7 @@
+ /**
+  * ipa_disable_register_cb() - Reset the IPA is ready flag
+  *
+- * Return: Set the ipa_is_ready flag to false when module is
++ * Return: Set the wlan_ipa_is_ready flag to false when module is
+  * unloaded to indicate that ipa ready cb is not registered
+  */
+ void ipa_disable_register_cb(void);
+--- a/drivers/staging/qcacld-3.0/components/ipa/dispatcher/src/wlan_ipa_obj_mgmt_api.c
++++ b/drivers/staging/qcacld-3.0/components/ipa/dispatcher/src/wlan_ipa_obj_mgmt_api.c
+@@ -28,7 +28,8 @@
+ 
+ static bool g_ipa_is_ready;
+ static qdf_mutex_t g_init_deinit_lock;
+-bool ipa_is_ready(void)
++/* Keep WLAN callback readiness distinct from the platform IPA readiness symbol. */
++bool wlan_ipa_is_ready(void)
+ {
+ 	return g_ipa_is_ready;
+ }
+--- a/drivers/staging/qcacld-3.0/components/ipa/dispatcher/src/wlan_ipa_ucfg_api.c
++++ b/drivers/staging/qcacld-3.0/components/ipa/dispatcher/src/wlan_ipa_ucfg_api.c
+@@ -31,7 +31,7 @@
+ 
+ bool ucfg_ipa_is_ready(void)
+ {
+-	return ipa_is_ready();
++	return wlan_ipa_is_ready();
+ }
+ 
+ bool ucfg_ipa_is_enabled(void)

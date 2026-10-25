@@ -1,3 +1,5 @@
+> **Xiaomi 11T Pro (vili):** `.github/workflows/build-vili.yml` builds current KernelSU-Next (real version 33314, API 5) plus SUSFS 2.3.0 on the newer published source and the working device configuration. The initial combined artifact bootlooped; a subsequent diagnostic baseline booted but exposed a Wi-Fi HAL startup mismatch. The current candidate includes the `/dev/wlan` fix and is pending compile/device verification. See [integration details](patches/README.md) and [device test history](docs/VILI_BASELINE.md).
+
 # Shipping the Docker kernel build system as a standalone GitHub repo
 
 This document explains how the Docker build works and how to publish it as its own repo (without kernel source, firmware, or build outputs).

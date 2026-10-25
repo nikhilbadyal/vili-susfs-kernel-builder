@@ -1,0 +1,2 @@
+# Diff context contains whitespace markers that must remain byte-exact for strict patch application.
+patches/*.patch -whitespace

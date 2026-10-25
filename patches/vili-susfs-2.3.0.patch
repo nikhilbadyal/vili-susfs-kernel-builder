@@ -3995,7 +3995,7 @@ index d140468d0..000000000
 -    return 0;
 -}
 diff --git a/fs/susfs.c b/fs/susfs.c
-index 314f871a7..7dca01d39 100644
+index 314f871a7..840287626 100644
 --- a/fs/susfs.c
 +++ b/fs/susfs.c
 @@ -7,682 +7,372 @@
@@ -6155,7 +6155,7 @@ index 314f871a7..7dca01d39 100644
  static int copy_config_to_buf(const char *config_string, char *buf_ptr, size_t *copied_size, size_t bufsize) {
  	size_t tmp_size = strlen(config_string);
  
-@@ -1208,112 +1229,327 @@ static int copy_config_to_buf(const char *config_string, char *buf_ptr, size_t *
+@@ -1208,112 +1229,328 @@ static int copy_config_to_buf(const char *config_string, char *buf_ptr, size_t *
  		SUSFS_LOGE("bufsize is not big enough to hold the string.\n");
  		return -EINVAL;
  	}
@@ -6417,8 +6417,9 @@ index 314f871a7..7dca01d39 100644
 + */
 +static SUSFS_DECL_FSNOTIFY_OPS(susfs_handle_sdcard_inode_event)
 +{
-+	if (!file_name || strlen((const char *)file_name) != 7 ||
-+	    memcmp(file_name, "Android", 7))
++	/* fsnotify passes a qstr on this kernel, not a raw character pointer. */
++	if (!file_name || susfs_fname_len(file_name) != 7 ||
++	    memcmp(susfs_fname_arg(file_name), "Android", 7))
 +		return 0;
 +
 +	if (test_and_set_bit(0, &sdcard_cleanup_scheduled))

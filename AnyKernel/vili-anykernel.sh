@@ -1,7 +1,7 @@
 #!/sbin/sh
-# Isolate baseline compatibility to the kernel; recovery and vendor device trees stay as backed up.
+# Isolate kernel compatibility to the kernel; recovery and vendor device trees stay as backed up.
 properties() { '
-kernel.string=vili boot baseline (no root or SUSFS)
+kernel.string=vili current KernelSU-Next + SUSFS 2.3.0
 do.devicecheck=1
 do.modules=0
 do.systemless=0

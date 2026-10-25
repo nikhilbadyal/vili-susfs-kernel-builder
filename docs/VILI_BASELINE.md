@@ -19,3 +19,12 @@ The artifact contains only Image, the pinned AnyKernel tools/installer, and buil
 Verification includes the resolved and embedded configurations, ARM64 Image magic, source pin, installer identity, and an allowlist excluding secondary partition payloads. Successful compilation still requires device boot verification. The baseline gate was also checked against the failed configuration and deliberate Wi-Fi linkage/cgroup regressions; all were rejected.
 
 For a temporary boot test, `scripts/repack-vili-boot.py ORIGINAL_BOOT IMAGE OUTPUT` accepts only the observed v3/4096-byte boot layout. It preserves the original header fields and compressed ramdisk bytes, replaces the kernel, and omits partition padding/AVB footer for downloading to the already verified unlocked bootloader. It writes only a host file; `fastboot boot OUTPUT` is a separate operation. A normal reboot returns to the installed Titanic boot image. Original-kernel round-trip testing reproduced the entire original image payload byte for byte, and an unsupported header was rejected.
+
+
+## Runtime result and return to the combined goal
+
+Run 40185942686 produced a baseline that booted temporarily with `fastboot boot`. Android reported `sys.boot_completed=1`, the display/zygote/audio/camera services ran, and the camera service enumerated eight devices. Wi-Fi failed: the HAL could not access its driver control node. The candidate lacked `/dev/wlan`; the installed Titanic kernel exposes `/dev/wlan`, and its Wi-Fi works. A normal reboot returned to Titanic, and both original boot-partition hashes were reverified unchanged.
+
+The companion device tree's `BoardConfigCommon.mk` explicitly configures `WIFI_DRIVER_STATE_CTRL_PARAM := "/dev/wlan"` with ON/OFF commands. The vendor WLAN source instead selected a deferred sysfs loader in built-in mode. The combined candidate removes that obsolete loader and initializes the existing character-device control path for built-in operation as well. The host test reproduces the original missing-node path and verifies the corrected path.
+
+The workflow has now returned to the requested combined current KernelSU-Next/API 5 + SUSFS 2.3.0 artifact. `verify-vili-profile.py` checks the original hardware policy, linked drivers and boot-only package; `verify-vili.py` checks the released manager contract and linked root/SUSFS control. Neither the combined candidate's boot nor its Wi-Fi/SUSFS runtime is claimed until device verification succeeds.

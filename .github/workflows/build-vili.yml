@@ -1,5 +1,5 @@
-# Establish ROM compatibility separately from root and VFS changes after the previous integration bootlooped.
-name: Build vili boot baseline
+# Build current KernelSU/SUSFS on the device profile proven to boot, with the diagnosed WLAN startup correction.
+name: Build vili current KernelSU and SUSFS
 
 on:
   workflow_dispatch:
@@ -11,11 +11,15 @@ permissions:
 env:
   KERNEL_REPO: https://github.com/Spanish-or-Vanish/kernel_xiaomi_sm8350
   KERNEL_REF: 3679ab828bc4464e4e41152154ca0f5c6ed361e6
+  # This maintained legacy snapshot matches the released v3.4.2 manager API without a version override.
+  KSU_REPO: https://github.com/KernelSU-Next/KernelSU-Next
+  KSU_REF: 465490a26667ba4cf00b3be975a7e28e53978829
+  MANAGER_REF: 4c706b5938665866ebe16944a481a7b91e3396af
   ANYKERNEL_REPO: https://github.com/loystonpais/AnyKernel3
   ANYKERNEL_REF: a4ffe92b9b05b058960079e9b6b029f7dfe954f2
 
 jobs:
-  baseline:
+  kernel:
     runs-on: namespace-profile-kernel
     env:
       ARCH: arm64
@@ -53,14 +57,36 @@ jobs:
           # Built-in WLAN shares vmlinux with platform IPA and nl80211; keep its private helper names distinct.
           git -C kernel apply --check ../patches/vili-builtin-wlan.patch
           git -C kernel apply ../patches/vili-builtin-wlan.patch
+          # Match the working ROM's /dev/wlan HAL control contract for built-in WLAN.
+          git -C kernel apply --check ../patches/vili-wlan-control.patch
+          git -C kernel apply ../patches/vili-wlan-control.patch
+          # Full history preserves the official driver's real version calculation.
+          git clone --branch legacy "$KSU_REPO" kernel/KernelSU-Next
+          git -C kernel/KernelSU-Next checkout --detach "$KSU_REF"
+          git -C kernel apply --check ../patches/vili-current-ksu-link.patch
+          git -C kernel apply ../patches/vili-current-ksu-link.patch
+          git -C kernel apply --check ../patches/vili-lineage-susfs-2.3.0.patch
+          git -C kernel apply ../patches/vili-lineage-susfs-2.3.0.patch
+          git -C kernel/KernelSU-Next apply --check ../../patches/ksu-legacy-susfs.patch
+          git -C kernel/KernelSU-Next apply ../../patches/ksu-legacy-susfs.patch
+          # Check the published manager contract rather than changing the reported driver version.
+          curl -fSL "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/$MANAGER_REF/manager/app/src/main/java/com/rifsxd/ksunext/Natives.kt" -o manager-Natives.kt
+          curl -fSL "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/$MANAGER_REF/uapi/supercall.h" -o manager-supercall.h
           mkdir -p kernel/out
           cp configs/vili-working.config kernel/out/.config
-          # Give the diagnostic build a distinct name without changing device feature selection.
-          kernel/scripts/config --file kernel/out/.config --set-str LOCALVERSION -vili-baseline -d LOCALVERSION_AUTO
+          # Keep the working device profile and explicitly enable the maintained root hooks and SUSFS features.
+          kernel/scripts/config --file kernel/out/.config --set-str LOCALVERSION -vili-ksun-susfs -d LOCALVERSION_AUTO \
+            -e KSU -d KSU_MANUAL_HOOK -e KSU_KPROBES_HOOK -d KSU_SYSCALL_TABLE_HOOK \
+            -e KSU_SUSFS -e KSU_SUSFS_SUS_PATH -e KSU_SUSFS_SUS_MOUNT \
+            -e KSU_SUSFS_SUS_KSTAT -e KSU_SUSFS_SPOOF_UNAME -e KSU_SUSFS_ENABLE_LOG \
+            -e KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS -e KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG \
+            -e KSU_SUSFS_OPEN_REDIRECT -e KSU_SUSFS_SUS_MAP
           make -C kernel O=out olddefconfig
-          python3 scripts/verify-vili-baseline.py configured
+          python3 scripts/verify-vili-profile.py configured
+          python3 scripts/verify-vili.py sources
+          python3 scripts/test-susfs-control.py kernel/KernelSU-Next/kernel/feature/susfs_control.c kernel/include/linux/susfs_def.h
 
-      - name: Build baseline Image
+      - name: Build combined kernel Image
         run: |
           # Preserve pipeline failure and the vendor source's non-fatal warning policy.
           set -euo pipefail
@@ -69,44 +95,48 @@ jobs:
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
             "KCFLAGS=-Wno-incompatible-function-pointer-types -Wno-error")
           # Generate shared SELinux headers before their built-in consumers.
-          make "${make_args[@]}" -j"$(nproc)" security/selinux/ 2>&1 | tee baseline-build.log
-          make "${make_args[@]}" -j"$(nproc)" Image 2>&1 | tee -a baseline-build.log
+          make "${make_args[@]}" -j"$(nproc)" security/selinux/ 2>&1 | tee build.log
+          make "${make_args[@]}" -j"$(nproc)" Image 2>&1 | tee -a build.log
           # Assert actual linkage, since matching .config alone cannot prove built-in techpack drivers.
           llvm-nm --defined-only kernel/out/vmlinux > kernel/out/defined-symbols.txt
-          python3 scripts/verify-vili-baseline.py compiled
+          python3 scripts/verify-vili-profile.py compiled
+          python3 scripts/verify-vili.py compiled
 
-      - name: Package boot-only baseline
+      - name: Package boot-only combined kernel
         run: |
           git clone "$ANYKERNEL_REPO" kernel/AK
           git -C kernel/AK checkout --detach "$ANYKERNEL_REF"
-          cp AnyKernel/baseline-anykernel.sh kernel/AK/anykernel.sh
+          cp AnyKernel/vili-anykernel.sh kernel/AK/anykernel.sh
           cp kernel/out/arch/arm64/boot/Image kernel/AK/Image
-          cp baseline-info.json kernel/AK/baseline-info.json
+          cp profile-info.json kernel/AK/profile-info.json
+          cp build-info.json kernel/AK/build-info.json
           # Exclude DTB/DTBO, vendor_boot, module and ramdisk payloads to isolate the kernel.
-          (cd kernel/AK && zip -r9 ../../vili-boot-baseline.zip Image anykernel.sh baseline-info.json tools META-INF)
-          python3 scripts/verify-vili-baseline.py package
-          sha256sum vili-boot-baseline.zip > baseline-SHA256SUMS
+          (cd kernel/AK && zip -r9 ../../vili-current-api-susfs.zip Image anykernel.sh profile-info.json build-info.json tools META-INF)
+          python3 scripts/verify-vili-profile.py package
+          sha256sum vili-current-api-susfs.zip > SHA256SUMS
 
-      - name: Upload baseline evidence
+      - name: Upload build evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: vili-baseline-evidence
+          name: vili-build-evidence
           path: |
             kernel/out/.config
             kernel/out/defined-symbols.txt
-            baseline-info.json
-            baseline-build.log
+            profile-info.json
+            build-info.json
+            build.log
           include-hidden-files: true
           if-no-files-found: ignore
 
       # Publish a package only after the embedded config and payload checks pass.
-      - name: Upload verified baseline package
+      - name: Upload verified combined package
         uses: actions/upload-artifact@v4
         with:
-          name: vili-boot-baseline
+          name: vili-current-api-susfs
           path: |
-            vili-boot-baseline.zip
-            baseline-SHA256SUMS
-            baseline-info.json
+            vili-current-api-susfs.zip
+            SHA256SUMS
+            profile-info.json
+            build-info.json
           if-no-files-found: error

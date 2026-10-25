@@ -1831,9 +1831,14 @@
  #endif
 --- a/fs/stat.c
 +++ b/fs/stat.c
-@@ -20,6 +20,11 @@
+@@ -19,7 +19,16 @@
+ #include <linux/compat.h>
  
  #include <linux/uaccess.h>
++#ifdef CONFIG_KSU_SUSFS
++/* Stat flags and app classification must match the VFS implementation. */
++#include <linux/susfs_def.h>
++#endif
  #include <asm/unistd.h>
 +
 +#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
@@ -1843,7 +1848,7 @@
  
  /**
   * generic_fillattr - Fill in the basic attributes from the inode struct
-@@ -77,9 +82,53 @@
+@@ -77,9 +86,53 @@
  	if (IS_AUTOMOUNT(inode))
  		stat->attributes |= STATX_ATTR_AUTOMOUNT;
  
@@ -1897,7 +1902,7 @@
  
  	generic_fillattr(inode, stat);
  	return 0;
-@@ -165,6 +214,7 @@
+@@ -165,6 +218,7 @@
   *
   * 0 will be returned on success, and a -ve error code if unsuccessful.
   */

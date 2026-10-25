@@ -50,6 +50,8 @@ def verify_sources():
     assert git(KERNEL, 'rev-parse', 'HEAD') == os.environ['KERNEL_REF']
     assert git(DRIVER, 'rev-parse', 'HEAD') == os.environ['KSU_REF']
     assert '#define SUSFS_VERSION "v2.3.0"' in (KERNEL / 'include/linux/susfs.h').read_text()
+    # stat.c consumes SUSFS flags and app classification directly; catch a dropped include before the full build.
+    assert '#include <linux/susfs_def.h>' in (KERNEL / 'fs/stat.c').read_text()
     # Rejected patches and surviving old manual hooks must never reach a flashable artifact.
     assert not any(name.endswith('.rej') for name in git(KERNEL, 'ls-files', '--others', '--exclude-standard').splitlines()), 'New patch rejection files remain'
     assert 'ksu_handle_execveat(' not in (KERNEL / 'fs/exec.c').read_text()

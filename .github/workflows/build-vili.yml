@@ -1,0 +1,135 @@
+# Build a vili (Xiaomi Mi 11T Pro, SM8350) 5.4 kernel with KernelSU-Next + SuSFS.
+# Rationale: the stock TitanicExtended build ships KSU-Next WITHOUT the susfs kernel
+# patch, so root hiding (su/mount/maps) never works. This CI builds from the SAME
+# kernel source as the user's current ROM (zero drift), applies the susfs VFS patch,
+# enables the SUSFS configs, and packages an AnyKernel3 flashable zip as an artifact.
+name: Build vili KSU-Next SUSFS
+
+on:
+  workflow_dispatch:
+    inputs:
+      ksu_ref:
+        description: "KernelSU-Next git ref to build (tag/branch). v3.4.2 = latest release."
+        default: "v3.4.2"
+      susfs_branch:
+        description: "susfs4ksu branch matching the kernel (5.4)."
+        default: "kernel-5.4"
+
+env:
+  # Build from the user's own ROM kernel source so the result matches their device exactly.
+  KERNEL_REPO: https://github.com/Spanish-or-Vanish/kernel_xiaomi_sm8350
+  KERNEL_BRANCH: vili_ksu-302
+  # Unified Lahaina QGKI defconfig (no vili-specific fragment exists; this is what the source builds).
+  DEFCONFIG: vendor/lahaina-qgki_defconfig
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout harness (AnyKernel3)
+        uses: actions/checkout@v4
+
+      - name: Install toolchain (clang-14 + aarch64 gcc, matching the proven Dockerfile)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-14 lld-14 llvm-14 gcc g++ gcc-aarch64-linux-gnu \
+            make bc bison flex libssl-dev libelf-dev kmod dwarves \
+            device-tree-compiler openssl python3 cpio lz4 gzip xz-utils zstd git perl zip
+          # LLVM=1 expects unversioned tool names.
+          for t in clang clang++ clang-cpp ld.lld llvm-ar llvm-nm llvm-objcopy \
+                   llvm-objdump llvm-readelf llvm-strip llvm-size llvm-strings \
+                   llvm-readobj llvm-config; do
+            sudo ln -sf "/usr/bin/${t}-14" "/usr/bin/${t}" 2>/dev/null || true
+          done
+          clang --version | head -1; ld.lld --version | head -1
+
+      - name: Clone kernel source (+ submodules)
+        run: |
+          git clone --depth 1 -b "$KERNEL_BRANCH" "$KERNEL_REPO" kernel
+          cd kernel
+          # Pulls the in-tree KernelSU-Next submodule + drivers/kernelsu symlink.
+          git submodule update --init --depth 1 || true
+
+      - name: Pin KernelSU-Next to requested release (built-in susfs KSU-side)
+        working-directory: kernel/KernelSU-Next
+        run: |
+          # Re-point to the upstream KSU-Next so release tags like v3.4.2 are fetchable.
+          git remote set-url origin https://github.com/KernelSU-Next/KernelSU-Next.git || true
+          git fetch --tags --force origin || true
+          git checkout "${{ inputs.ksu_ref }}" 2>/dev/null \
+            || git checkout "tags/${{ inputs.ksu_ref }}" 2>/dev/null \
+            || echo "::warning::could not checkout ${{ inputs.ksu_ref }}; keeping submodule default"
+          echo "KSU-Next at: $(git describe --tags 2>/dev/null || git rev-parse --short HEAD)"
+
+      - name: Apply SuSFS kernel-5.4 VFS patch
+        working-directory: kernel
+        run: |
+          git clone --depth 1 -b "${{ inputs.susfs_branch }}" \
+            https://gitlab.com/simonpunk/susfs4ksu.git ../susfs4ksu
+          # Kernel-side susfs sources + the VFS hook patch (the half the stock build omitted).
+          cp ../susfs4ksu/kernel_patches/fs/susfs.c fs/ 2>/dev/null || true
+          cp ../susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/ 2>/dev/null || true
+          cp ../susfs4ksu/kernel_patches/include/linux/susfs_def.h include/linux/ 2>/dev/null || true
+          echo ">>> Applying 50_add_susfs_in_kernel-5.4.patch"
+          patch -p1 --fuzz=3 --no-backup-if-mismatch \
+            < ../susfs4ksu/kernel_patches/50_add_susfs_in_kernel-5.4.patch || true
+          echo ">>> Patch rejects (if any):"
+          find . -name '*.rej' -print -exec echo '--- {} ---' \; -exec cat {} \; || true
+
+      - name: Enable KSU + SUSFS in defconfig
+        working-directory: kernel
+        run: |
+          DC="arch/arm64/configs/${DEFCONFIG}"
+          cat >> "$DC" <<'CFG'
+          CONFIG_KSU=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
+          CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_KSTAT=y
+          CONFIG_KSU_SUSFS_SUS_MAPS=y
+          CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
+          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+          CONFIG_KSU_SUSFS_ENABLE_LOG=y
+          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+          CFG
+
+      - name: Build kernel
+        working-directory: kernel
+        env:
+          ARCH: arm64
+          LLVM: "1"
+          LLVM_IAS: "1"
+          CROSS_COMPILE: aarch64-linux-gnu-
+          CLANG_TRIPLE: aarch64-linux-gnu-
+          KBUILD_BUILD_USER: ci
+          KBUILD_BUILD_HOST: github
+        run: |
+          make O=out "${DEFCONFIG}"
+          make O=out olddefconfig
+          # Confirm susfs actually made it into the config before spending build time.
+          echo ">>> SUSFS config in .config:"; grep -E 'CONFIG_KSU(_SUSFS)?=' out/.config || true
+          make O=out KCFLAGS=-Wno-error -j"$(nproc)" Image dtbs \
+            || make O=out KCFLAGS=-Wno-error -j"$(nproc)" Image
+          ls -la out/arch/arm64/boot/
+
+      - name: Package AnyKernel3 zip
+        run: |
+          cp kernel/out/arch/arm64/boot/Image AnyKernel/Image
+          cp kernel/out/arch/arm64/boot/dtbo.img AnyKernel/dtbo.img 2>/dev/null || true
+          # Retarget the AnyKernel device guard from odin to vili.
+          sed -i 's/device\.name1=odin/device.name1=vili/' AnyKernel/anykernel.sh
+          cd AnyKernel
+          zip -r9 ../vili-ksunext-susfs.zip . -x '.git/*' -x '.github/*' -x '*.zip' -x '.DS_Store'
+
+      - name: Upload flashable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: vili-ksunext-susfs
+          path: vili-ksunext-susfs.zip
+          if-no-files-found: error

@@ -74,8 +74,8 @@ def verify_sources():
 
 def verify_compiled():
     """Verify linked symbols and the version passed to the actual compiler."""
-    symbols = {line.split()[-1] for line in (KERNEL / 'out/defined-symbols.txt').read_text().splitlines() if line.split()}
-    for symbol in ['susfs_init', 'ksu_susfs_control', 'susfs_is_current_ksu_domain', 'susfs_show_version', 'ksu_handle_sys_reboot']:
+    symbols = {line.split()[-1].split('.')[0] for line in (KERNEL / 'out/defined-symbols.txt').read_text().splitlines() if line.split()}
+    for symbol in ['ksu_susfs_control', 'susfs_add_sus_path', 'susfs_add_sus_map', 'ksu_handle_sys_reboot']:
         assert symbol in symbols, f'Missing linked symbol: {symbol}'
     commands = [path.read_text() for path in (KERNEL / 'out/drivers/kernelsu').rglob('.init.o.cmd')]
     expected = json.loads(INFO.read_text())['ksu_version']

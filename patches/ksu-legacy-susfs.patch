@@ -141,10 +141,10 @@ index 9be09872..52e4f15e 100644
  	ksu_sulog_init();
 diff --git a/kernel/feature/susfs_control.c b/kernel/feature/susfs_control.c
 new file mode 100644
-index 00000000..5c4d2eae
+index 00000000..54dda600
 --- /dev/null
 +++ b/kernel/feature/susfs_control.c
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,120 @@
 +/*
 + * Connect SUSFS v2.3.0 to the maintained legacy driver, retaining its root hooks
 + * and UAPI 5 so the released manager does not need a fork or downgrade.
@@ -153,6 +153,9 @@ index 00000000..5c4d2eae
 +#include <linux/cred.h>
 +#include <linux/security.h>
 +#include <linux/string.h>
++#include <linux/slab.h>
++#include <linux/task_work.h>
++#include "compat/kernel_compat.h"
 +#include <linux/susfs.h>
 +#include "feature/susfs_control.h"
 +#include "selinux/selinux.h"
@@ -173,7 +176,8 @@ index 00000000..5c4d2eae
 +    return susfs_ksu_sid && current_sid() == susfs_ksu_sid;
 +}
 +
-+int ksu_susfs_control(unsigned int cmd, void __user **arg)
++/* Keep the cold RPC switch separate from the task-work trampoline for binary auditing. */
++noinline int ksu_susfs_control(unsigned int cmd, void __user **arg)
 +{
 +    /* The reboot hook enforces root before reaching this fixed set of SUSFS operations. */
 +    switch (cmd) {
@@ -227,12 +231,46 @@ index 00000000..5c4d2eae
 +        return -EINVAL;
 +    }
 +}
++
++/* Preserve the caller's address until task work runs before its return to userspace. */
++struct susfs_control_work {
++    struct callback_head callback;
++    unsigned int cmd;
++    void __user *arg;
++};
++
++static void susfs_control_task_work(struct callback_head *callback)
++{
++    struct susfs_control_work *work = container_of(callback, struct susfs_control_work, callback);
++
++    /* This runs in the original task context, where user copies and sleeping allocations are valid. */
++    ksu_susfs_control(work->cmd, &work->arg);
++    kfree(work);
++}
++
++int ksu_susfs_schedule(unsigned int cmd, void __user *arg)
++{
++    struct susfs_control_work *work;
++    int error;
++
++    /* The probe may not sleep; defer the command using the driver's existing fd-install pattern. */
++    work = kzalloc(sizeof(*work), GFP_ATOMIC);
++    if (!work)
++        return -ENOMEM;
++    work->cmd = cmd;
++    work->arg = arg;
++    work->callback.func = susfs_control_task_work;
++    error = task_work_add(current, &work->callback, TWA_RESUME);
++    if (error)
++        kfree(work);
++    return error;
++}
 diff --git a/kernel/feature/susfs_control.h b/kernel/feature/susfs_control.h
 new file mode 100644
-index 00000000..65219e2d
+index 00000000..cc62510b
 --- /dev/null
 +++ b/kernel/feature/susfs_control.h
-@@ -0,0 +1,10 @@
+@@ -0,0 +1,11 @@
 +/* Glue for the pinned 5.4 VFS patch; the KernelSU userspace ABI remains unchanged. */
 +#ifndef KSU_SUSFS_CONTROL_H
 +#define KSU_SUSFS_CONTROL_H
@@ -242,9 +280,10 @@ index 00000000..65219e2d
 +bool susfs_is_current_ksu_domain(void);
 +void ksu_susfs_cache_sids(void);
 +int ksu_susfs_control(unsigned int cmd, void __user **arg);
++int ksu_susfs_schedule(unsigned int cmd, void __user *arg);
 +#endif
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index 3dddf937..cc57fb7f 100644
+index 3dddf937..9a7ff431 100644
 --- a/kernel/hook/setuid_hook.c
 +++ b/kernel/hook/setuid_hook.c
 @@ -26,8 +26,26 @@
@@ -336,7 +375,7 @@ index 258ca819..f0423172 100644
      err = security_secctx_to_secid(KERNEL_SU_CONTEXT, strlen(KERNEL_SU_CONTEXT),
                                     &cached_su_sid);
 diff --git a/kernel/supercall/supercall.c b/kernel/supercall/supercall.c
-index 9c7ac7bb..f00f6425 100644
+index 9c7ac7bb..e14e0dfb 100644
 --- a/kernel/supercall/supercall.c
 +++ b/kernel/supercall/supercall.c
 @@ -120,6 +120,11 @@ static void ksu_install_fd_tw_func(struct callback_head *cb)
@@ -358,7 +397,7 @@ index 9c7ac7bb..f00f6425 100644
 +#ifdef CONFIG_KSU_SUSFS
 +	/* Keep SUSFS commands root-only; manager and su descriptor installation retain their own checks. */
 +	if (magic2 == SUSFS_MAGIC && current_uid().val == 0)
-+		return ksu_susfs_control(cmd, arg);
++		return ksu_susfs_schedule(cmd, *arg);
 +#endif
 +
  	// extensions 

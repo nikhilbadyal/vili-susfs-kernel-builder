@@ -32,9 +32,10 @@ jobs:
       - name: Install LLVM 18 toolchain
         run: |
           # Titanic uses LLVM 18; do not carry the older tree's LLVM 14 recipe into this baseline.
+          # Cross libc headers/static libraries are required by Kconfig's ARM64 link capability probes.
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            clang-18 lld-18 llvm-18 gcc g++ gcc-aarch64-linux-gnu \
+            clang-18 lld-18 llvm-18 gcc g++ gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
             make bc bison flex libssl-dev libelf-dev kmod dwarves \
             openssl python3 cpio lz4 gzip xz-utils zstd git perl zip curl
           echo /usr/lib/llvm-18/bin >> "$GITHUB_PATH"

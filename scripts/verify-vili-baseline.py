@@ -52,8 +52,18 @@ def configured():
     # Do not let a moving upstream branch silently replace the reviewed baseline.
     assert revision == '3679ab828bc4464e4e41152154ca0f5c6ed361e6'
     info = {'kernel_ref': revision, 'purpose': 'boot baseline; no KernelSU or SUSFS',
+            'techpack_patch_sha256': hashlib.sha256(Path('patches/vili-builtin-techpacks.patch').read_bytes()).hexdigest(),
             'config_sha256': hashlib.sha256(config.encode()).hexdigest()}
     Path('baseline-info.json').write_text(json.dumps(info, indent=2) + '\n')
+
+
+def compiled():
+    """Require real definitions from all three techpacks in vmlinux, rather than separate modules."""
+    symbols = {line.split()[-1].split('.')[0] for line in
+               Path('kernel/out/defined-symbols.txt').read_text().splitlines() if line.split()}
+    for symbol in ['msm_drm_bind', 'camera_init', 'msm_asoc_machine_probe']:
+        assert symbol in symbols, f'Techpack is missing from vmlinux: {symbol}'
+    print('Display, camera and audio drivers are linked into vmlinux')
 
 
 def package():
@@ -76,4 +86,4 @@ def package():
 
 # Keep config and package stages explicit so one cannot stand in for the other.
 if __name__ == '__main__':
-    {'configured': configured, 'package': package}[sys.argv[1]]()
+    {'configured': configured, 'compiled': compiled, 'package': package}[sys.argv[1]]()

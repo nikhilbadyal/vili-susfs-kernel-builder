@@ -1,0 +1,137 @@
+--- a/techpack/display/config/lahainadisp.conf
++++ b/techpack/display/config/lahainadisp.conf
+@@ -1,3 +1,4 @@
++# vili requires these drivers in Image; no early vendor DLKM set is installed by the baseline.
+ export CONFIG_DRM_MSM=y
+ export CONFIG_DRM_MSM_SDE=y
+ export CONFIG_DRM_MSM_DP=y
+@@ -9,5 +10,5 @@
+ export CONFIG_DRM_MSM_REGISTER_LOGGING=y
+ export CONFIG_QCOM_MDSS_PLL=y
+ export CONFIG_DRM_SDE_RSC=y
+-export CONFIG_DISPLAY_BUILD=m
++export CONFIG_DISPLAY_BUILD=y
+ export CONFIG_DRM_SDE_VM=y
+--- a/techpack/audio/config/lahainaauto.conf
++++ b/techpack/audio/config/lahainaauto.conf
+@@ -1,50 +1,51 @@
+-export CONFIG_PINCTRL_LPI=m
+-export CONFIG_PINCTRL_WCD=m
+-export CONFIG_AUDIO_EXT_CLK=m
+-export CONFIG_SND_SOC_WCD9XXX_V2=m
+-export CONFIG_SND_SOC_WCD_MBHC=m
+-export CONFIG_WCD9XXX_CODEC_CORE_V2=m
+-export CONFIG_MSM_CDC_PINCTRL=m
+-export CONFIG_MSM_QDSP6V2_CODECS=m
+-export CONFIG_MSM_QDSP6_APRV2_RPMSG=m
+-export CONFIG_MSM_ADSP_LOADER=m
+-export CONFIG_REGMAP_SWR=m
+-export CONFIG_MSM_QDSP6_SSR=m
+-export CONFIG_MSM_QDSP6_PDR=m
+-export CONFIG_MSM_QDSP6_NOTIFIER=m
+-export CONFIG_SND_SOC_MSM_HOSTLESS_PCM=m
+-export CONFIG_SND_SOC_MSM_QDSP6V2_INTF=m
+-export CONFIG_SOUNDWIRE=m
+-export CONFIG_SOUNDWIRE_MSTR_CTRL=m
+-export CONFIG_SND_SOC_QDSP6V2=m
+-export CONFIG_SND_SOC_WCD_MBHC_ADC=m
+-export CONFIG_SND_SOC_MSM_HDMI_CODEC_RX=m
+-export CONFIG_QTI_PP=m
+-export CONFIG_SND_HWDEP_ROUTING=m
+-export CONFIG_SND_SOC_MSM_STUB=m
+-export CONFIG_SND_SOC_BOLERO=m
+-export CONFIG_WSA_MACRO=m
+-export CONFIG_VA_MACRO=m
+-export CONFIG_RX_MACRO=m
+-export CONFIG_TX_MACRO=m
+-export CONFIG_SND_SOC_WCD_IRQ=m
+-export CONFIG_SND_SOC_WCD938X=m
+-export CONFIG_SND_SOC_WCD938X_SLAVE=m
+-export CONFIG_SND_SOC_WCD937X=m
+-export CONFIG_SND_SOC_WCD937X_SLAVE=m
+-export CONFIG_SND_SOC_WSA883X=m
+-export CONFIG_SND_SOC_SWR_DMIC=m
+-export CONFIG_SND_SOC_LAHAINA=m
+-export CONFIG_SND_EVENT=m
+-export CONFIG_SND_SOC_CS35L41=m
+-export CONFIG_SND_SOC_CS35L45=m
+-export CONFIG_ELUS_PROXIMITY=m
++# vili requires these drivers in Image; no early vendor DLKM set is installed by the baseline.
++export CONFIG_PINCTRL_LPI=y
++export CONFIG_PINCTRL_WCD=y
++export CONFIG_AUDIO_EXT_CLK=y
++export CONFIG_SND_SOC_WCD9XXX_V2=y
++export CONFIG_SND_SOC_WCD_MBHC=y
++export CONFIG_WCD9XXX_CODEC_CORE_V2=y
++export CONFIG_MSM_CDC_PINCTRL=y
++export CONFIG_MSM_QDSP6V2_CODECS=y
++export CONFIG_MSM_QDSP6_APRV2_RPMSG=y
++export CONFIG_MSM_ADSP_LOADER=y
++export CONFIG_REGMAP_SWR=y
++export CONFIG_MSM_QDSP6_SSR=y
++export CONFIG_MSM_QDSP6_PDR=y
++export CONFIG_MSM_QDSP6_NOTIFIER=y
++export CONFIG_SND_SOC_MSM_HOSTLESS_PCM=y
++export CONFIG_SND_SOC_MSM_QDSP6V2_INTF=y
++export CONFIG_SOUNDWIRE=y
++export CONFIG_SOUNDWIRE_MSTR_CTRL=y
++export CONFIG_SND_SOC_QDSP6V2=y
++export CONFIG_SND_SOC_WCD_MBHC_ADC=y
++export CONFIG_SND_SOC_MSM_HDMI_CODEC_RX=y
++export CONFIG_QTI_PP=y
++export CONFIG_SND_HWDEP_ROUTING=y
++export CONFIG_SND_SOC_MSM_STUB=y
++export CONFIG_SND_SOC_BOLERO=y
++export CONFIG_WSA_MACRO=y
++export CONFIG_VA_MACRO=y
++export CONFIG_RX_MACRO=y
++export CONFIG_TX_MACRO=y
++export CONFIG_SND_SOC_WCD_IRQ=y
++export CONFIG_SND_SOC_WCD938X=y
++export CONFIG_SND_SOC_WCD938X_SLAVE=y
++export CONFIG_SND_SOC_WCD937X=y
++export CONFIG_SND_SOC_WCD937X_SLAVE=y
++export CONFIG_SND_SOC_WSA883X=y
++export CONFIG_SND_SOC_SWR_DMIC=y
++export CONFIG_SND_SOC_LAHAINA=y
++export CONFIG_SND_EVENT=y
++export CONFIG_SND_SOC_CS35L41=y
++export CONFIG_SND_SOC_CS35L45=y
++export CONFIG_ELUS_PROXIMITY=y
+ export CONFIG_MSM_CSPL=y
+-export CONFIG_SND_SWR_HAPTICS=m
+-export CONFIG_DIGITAL_CDC_RSC_MGR=m
+-export CONFIG_SND_SOC_TFA9874=m
+-export CONFIG_AUXPCM_DISABLE=m
+-export CONFIG_MIUS_IIO=m
+-export CONFIG_SND_SOC_AW88263S=m
+-export CONFIG_SND_SOC_AW88263S_M20=m
+-export CONFIG_MMHARDWARE_DETECTION=m
++export CONFIG_SND_SWR_HAPTICS=y
++export CONFIG_DIGITAL_CDC_RSC_MGR=y
++export CONFIG_SND_SOC_TFA9874=y
++export CONFIG_AUXPCM_DISABLE=y
++export CONFIG_MIUS_IIO=y
++export CONFIG_SND_SOC_AW88263S=y
++export CONFIG_SND_SOC_AW88263S_M20=y
++export CONFIG_MMHARDWARE_DETECTION=y
+--- a/techpack/camera/config/lahainacamera.conf
++++ b/techpack/camera/config/lahainacamera.conf
+@@ -1,12 +1,13 @@
++# vili requires these drivers in Image; no early vendor DLKM set is installed by the baseline.
+ # SPDX-License-Identifier: GPL-2.0-only
+ # Copyright (c) 2019-2020, The Linux Foundation. All rights reserved.
+ 
+ ifeq ($(CONFIG_QGKI),y)
+-export CONFIG_SPECTRA_CAMERA=m
+-$(info "QGKI Spectra Camera Building as DLKM")
++export CONFIG_SPECTRA_CAMERA=y
++$(info "QGKI Spectra Camera Building into Image")
+ else
+-export CONFIG_SPECTRA_CAMERA=m
+-$(info "GKI Spectra Camera Building as DLKM")
++export CONFIG_SPECTRA_CAMERA=y
++$(info "GKI Spectra Camera Building into Image")
+ endif
+ 
+ ifneq (,$(filter $(CONFIG_SPECTRA_CAMERA), y m))

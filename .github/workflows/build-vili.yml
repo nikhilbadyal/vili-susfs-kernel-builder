@@ -47,6 +47,9 @@ jobs:
           git -C kernel remote add origin "$KERNEL_REPO"
           git -C kernel fetch --depth 1 origin "$KERNEL_REF"
           git -C kernel checkout --detach FETCH_HEAD
+          # Qualcomm techpack linkage is selected outside .config; include display/audio/camera in Image.
+          git -C kernel apply --check ../patches/vili-builtin-techpacks.patch
+          git -C kernel apply ../patches/vili-builtin-techpacks.patch
           mkdir -p kernel/out
           cp configs/vili-working.config kernel/out/.config
           # Give the diagnostic build a distinct name without changing device feature selection.
@@ -65,6 +68,9 @@ jobs:
           # Generate shared SELinux headers before their built-in consumers.
           make "${make_args[@]}" -j"$(nproc)" security/selinux/ 2>&1 | tee baseline-build.log
           make "${make_args[@]}" -j"$(nproc)" Image 2>&1 | tee -a baseline-build.log
+          # Assert actual linkage, since matching .config alone cannot prove built-in techpack drivers.
+          llvm-nm --defined-only kernel/out/vmlinux > kernel/out/defined-symbols.txt
+          python3 scripts/verify-vili-baseline.py compiled
 
       - name: Package boot-only baseline
         run: |
@@ -85,6 +91,7 @@ jobs:
           name: vili-baseline-evidence
           path: |
             kernel/out/.config
+            kernel/out/defined-symbols.txt
             baseline-info.json
             baseline-build.log
           include-hidden-files: true

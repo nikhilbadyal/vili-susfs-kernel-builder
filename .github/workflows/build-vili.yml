@@ -50,6 +50,9 @@ jobs:
           # Qualcomm techpack linkage is selected outside .config; include display/audio/camera in Image.
           git -C kernel apply --check ../patches/vili-builtin-techpacks.patch
           git -C kernel apply ../patches/vili-builtin-techpacks.patch
+          # Built-in WLAN shares vmlinux with platform IPA and nl80211; keep its private helper names distinct.
+          git -C kernel apply --check ../patches/vili-builtin-wlan.patch
+          git -C kernel apply ../patches/vili-builtin-wlan.patch
           mkdir -p kernel/out
           cp configs/vili-working.config kernel/out/.config
           # Give the diagnostic build a distinct name without changing device feature selection.

@@ -53,6 +53,7 @@ def configured():
     assert revision == '3679ab828bc4464e4e41152154ca0f5c6ed361e6'
     info = {'kernel_ref': revision, 'purpose': 'boot baseline; no KernelSU or SUSFS',
             'techpack_patch_sha256': hashlib.sha256(Path('patches/vili-builtin-techpacks.patch').read_bytes()).hexdigest(),
+            'wlan_patch_sha256': hashlib.sha256(Path('patches/vili-builtin-wlan.patch').read_bytes()).hexdigest(),
             'config_sha256': hashlib.sha256(config.encode()).hexdigest()}
     Path('baseline-info.json').write_text(json.dumps(info, indent=2) + '\n')
 
